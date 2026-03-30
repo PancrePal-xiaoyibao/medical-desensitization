@@ -19,6 +19,7 @@
 # production
 /build
 /backend/bin
+/backend/server
 
 # misc
 .DS_Store

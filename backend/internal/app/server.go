@@ -93,8 +93,8 @@ func (s *Server) withLogging(route string, next http.HandlerFunc) http.HandlerFu
 func (s *Server) withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && isOriginAllowed(origin, s.config.CORSAllowedOrigins) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+		if matched, ok := matchAllowedOrigin(origin, s.config.CORSAllowedOrigins); ok {
+			w.Header().Set("Access-Control-Allow-Origin", matched)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Credentials", "false")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")

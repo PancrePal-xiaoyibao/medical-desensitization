@@ -138,6 +138,21 @@ func isOriginAllowed(origin string, allowedOrigins []string) bool {
 	return false
 }
 
+// matchAllowedOrigin 返回白名单中匹配的安全来源字符串，避免将用户输入直接反射到响应头中。
+func matchAllowedOrigin(origin string, allowedOrigins []string) (string, bool) {
+	if origin == "" {
+		return "", false
+	}
+
+	for _, allowed := range allowedOrigins {
+		if origin == allowed {
+			return allowed, true
+		}
+	}
+
+	return "", false
+}
+
 func hostMatchesOrigin(origin, host string) bool {
 	if origin == "" || host == "" {
 		return true
