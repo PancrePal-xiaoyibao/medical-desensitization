@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -36,8 +35,22 @@ type appError struct {
 	LogMessage string
 }
 
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel func()
+}
+
 func (e *appError) Error() string {
 	return e.Message
+}
+
+func (r *cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	if r.cancel != nil {
+		r.cancel()
+		r.cancel = nil
+	}
+	return err
 }
 
 func newAppError(status int, message string, logMessage ...string) *appError {
@@ -57,17 +70,19 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func writeError(w http.ResponseWriter, err error) {
+func writeError(ctx context.Context, w http.ResponseWriter, err error) {
 	var appErr *appError
 	if errors.As(err, &appErr) {
 		if appErr.LogMessage != "" {
-			fmt.Println(appErr.LogMessage)
+			ContextErrorf(ctx, "request.failed status=%d message=%q detail=%s", appErr.Status, appErr.Message, appErr.LogMessage)
+		} else {
+			ContextErrorf(ctx, "request.failed status=%d message=%q", appErr.Status, appErr.Message)
 		}
 		writeJSON(w, appErr.Status, map[string]string{"error": appErr.Message})
 		return
 	}
 
-	fmt.Println(err)
+	ContextErrorf(ctx, "request.failed error=%v", err)
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "服务内部错误，请稍后重试"})
 }
 
@@ -86,14 +101,24 @@ func cleanTTSText(text string) string {
 
 func fetchWithTimeout(ctx context.Context, timeout time.Duration, fn func(context.Context) (*http.Response, error)) (*http.Response, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	response, err := fn(requestCtx)
 	if err != nil {
+		cancel()
 		if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
 			return nil, newAppError(http.StatusGatewayTimeout, "请求上游超时，请稍后重试")
 		}
 		return nil, err
+	}
+
+	if response == nil || response.Body == nil {
+		cancel()
+		return response, nil
+	}
+
+	response.Body = &cancelOnCloseReadCloser{
+		ReadCloser: response.Body,
+		cancel:     cancel,
 	}
 
 	return response, nil
@@ -138,6 +163,18 @@ func safeReadText(response *http.Response, limit int64) string {
 	}
 
 	return strings.TrimSpace(string(body))
+}
+
+func logSafeURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.User = nil
+	return parsed.String()
 }
 
 func gzipBytes(payload []byte) ([]byte, error) {

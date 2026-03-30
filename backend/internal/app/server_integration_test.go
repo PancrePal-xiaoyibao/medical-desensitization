@@ -18,6 +18,7 @@ func TestHandleChat_ProxiesSSE(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertHeader(t, r.Header, "Authorization", "Bearer chat-secret")
 		assertHeader(t, r.Header, "Content-Type", "application/json")
+		assertHeader(t, r.Header, "Accept", "text/event-stream")
 
 		var payload chatRequest
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -32,7 +33,16 @@ func TestHandleChat_ProxiesSSE(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"世界\"}}]}\n\n")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"世\"}}]}\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"界\"}}]}\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
 	}))
 	defer upstream.Close()
 
@@ -60,9 +70,77 @@ func TestHandleChat_ProxiesSSE(t *testing.T) {
 	}
 	assertHeader(t, response.Header, "Access-Control-Allow-Origin", "http://frontend.test")
 	assertHeader(t, response.Header, "Content-Type", "text/event-stream")
+	assertHeader(t, response.Header, "Cache-Control", "no-cache, no-transform")
+	assertHeader(t, response.Header, "X-Accel-Buffering", "no")
 
 	body := mustReadBody(t, response)
-	if !strings.Contains(body, "\"世界\"") {
+	if !strings.Contains(body, "\"世\"") || !strings.Contains(body, "\"界\"") {
+		t.Fatalf("unexpected response body: %s", body)
+	}
+}
+
+func TestHandleChat_FastGPT_UsesSessionContext(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertHeader(t, r.Header, "Authorization", "Bearer chat-secret")
+		assertHeader(t, r.Header, "Accept", "text/event-stream")
+
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request failed: %v", err)
+		}
+
+		if got := payload["chatId"]; got != "session-123" {
+			t.Fatalf("unexpected chatId: %#v", got)
+		}
+		if got := payload["detail"]; got != true {
+			t.Fatalf("unexpected detail flag: %#v", got)
+		}
+		variables, ok := payload["variables"].(map[string]any)
+		if !ok || variables["uid"] != "user-456" {
+			t.Fatalf("unexpected variables payload: %#v", payload["variables"])
+		}
+
+		messages, ok := payload["messages"].([]any)
+		if !ok || len(messages) != 1 {
+			t.Fatalf("unexpected messages payload: %#v", payload["messages"])
+		}
+		lastMessage, ok := messages[0].(map[string]any)
+		if !ok || lastMessage["content"] != "第二句" {
+			t.Fatalf("unexpected last message: %#v", messages[0])
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: answer\ndata: {\"choices\":[{\"delta\":{\"content\":\"FastGPT\"}}]}\n\n")
+	}))
+	defer upstream.Close()
+
+	config := testConfig()
+	config.ChatProvider = "fastgpt"
+	config.ChatAPIURL = upstream.URL
+	config.FastGPTStreamDetail = false
+
+	backend := newBackendHTTPServer(t, config)
+	defer backend.Close()
+
+	requestBody := strings.NewReader(`{"messages":[{"role":"user","content":"第一句"},{"role":"user","content":"第二句"}],"stream":true,"chatId":"session-123","detail":true,"variables":{"uid":"user-456"}}`)
+	request, err := http.NewRequest(http.MethodPost, backend.URL+"/api/chat", requestBody)
+	if err != nil {
+		t.Fatalf("create request failed: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://frontend.test")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("perform request failed: %v", err)
+	}
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status: %d", response.StatusCode)
+	}
+
+	body := mustReadBody(t, response)
+	if !strings.Contains(body, "\"FastGPT\"") {
 		t.Fatalf("unexpected response body: %s", body)
 	}
 }

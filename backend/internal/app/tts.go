@@ -64,9 +64,12 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ContextLogf(r.Context(), "tts.request provider=%s text_chars=%d", s.config.TTSProvider, len([]rune(cleanText)))
+	ContextDebugf(r.Context(), "tts.request_preview text=%q", truncate(cleanText, 80))
+
 	audio, contentType, err := s.synthesizeSpeech(r.Context(), cleanText)
 	if err != nil {
-		writeError(w, err)
+		writeError(r.Context(), w, err)
 		return
 	}
 
@@ -74,6 +77,7 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(audio)
+	ContextLogf(r.Context(), "tts.completed provider=%s content_type=%s audio_bytes=%d", s.config.TTSProvider, contentType, len(audio))
 }
 
 func (s *Server) synthesizeSpeech(ctx context.Context, text string) ([]byte, string, error) {
@@ -88,6 +92,8 @@ func (s *Server) synthesizeWithAlibaba(ctx context.Context, text string) ([]byte
 	if s.config.AlibabaAPIKey == "" || s.config.AlibabaBaseURL == "" {
 		return nil, "", newAppError(http.StatusInternalServerError, "语音服务配置不完整，请联系管理员")
 	}
+
+	ContextDebugf(ctx, "tts.alibaba upstream=%s model=%s voice=%s", logSafeURL(s.config.AlibabaBaseURL+"/audio/speech"), s.config.AlibabaTTSModel, s.config.AlibabaTTSVoice)
 
 	requestBody, err := json.Marshal(map[string]any{
 		"model":           s.config.AlibabaTTSModel,
@@ -127,6 +133,8 @@ func (s *Server) synthesizeWithAlibaba(ctx context.Context, text string) ([]byte
 		return nil, "", err
 	}
 
+	ContextDebugf(ctx, "tts.alibaba upstream_ok bytes=%d", len(audio))
+
 	return audio, "audio/mpeg", nil
 }
 
@@ -134,6 +142,15 @@ func (s *Server) synthesizeWithDoubao(ctx context.Context, text string) ([]byte,
 	if s.config.DoubaoTTSAppID == "" || s.config.DoubaoTTSAccessKey == "" || s.config.DoubaoTTSSpeaker == "" {
 		return nil, "", newAppError(http.StatusInternalServerError, "语音服务配置不完整，请联系管理员")
 	}
+
+	ContextDebugf(
+		ctx,
+		"tts.doubao upstream=%s speaker=%s format=%s sample_rate=%d",
+		logSafeURL(s.config.DoubaoTTSURL),
+		s.config.DoubaoTTSSpeaker,
+		s.config.DoubaoTTSFormat,
+		s.config.DoubaoTTSSampleRate,
+	)
 
 	requestBody, err := json.Marshal(map[string]any{
 		"user": map[string]any{
@@ -185,6 +202,7 @@ func (s *Server) synthesizeWithDoubao(ctx context.Context, text string) ([]byte,
 	defer response.Body.Close()
 
 	logID := response.Header.Get("X-Tt-Logid")
+	ContextDebugf(ctx, "tts.doubao upstream_response status=%s log_id=%s", response.Status, logID)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, "", newAppError(
 			http.StatusBadGateway,
@@ -197,6 +215,8 @@ func (s *Server) synthesizeWithDoubao(ctx context.Context, text string) ([]byte,
 	if err != nil {
 		return nil, "", err
 	}
+
+	ContextDebugf(ctx, "tts.doubao upstream_ok bytes=%d log_id=%s", len(audio), logID)
 
 	return audio, resolveAudioContentType(s.config.DoubaoTTSFormat), nil
 }

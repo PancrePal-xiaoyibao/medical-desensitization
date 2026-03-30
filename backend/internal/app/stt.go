@@ -20,28 +20,28 @@ import (
 )
 
 const (
-	sttWebSocketPath                 = "/api/stt/ws"
-	doubaoProtocolVersion           = 0x1
-	doubaoHeaderSize                = 0x1
-	doubaoMessageTypeFullClient     = 0x1
-	doubaoMessageTypeAudioOnly      = 0x2
-	doubaoMessageTypeFullServer     = 0x9
-	doubaoMessageTypeError          = 0xF
-	doubaoSerializationNone         = 0x0
-	doubaoSerializationJSON         = 0x1
-	doubaoCompressionGZIP           = 0x1
-	doubaoAudioChunkBytes           = 6400
-	doubaoAudioSampleRate           = 16000
-	doubaoAudioBits                 = 16
-	doubaoAudioChannels             = 1
-	clientMessageStart             = "start"
-	clientMessageStop              = "stop"
-	serverMessageReady             = "ready"
-	serverMessageTranscript        = "transcript"
-	serverMessageCompleted         = "completed"
-	serverMessageError             = "error"
-	websocketClosePolicyViolation  = 1008
-	websocketCloseInternalError    = 1011
+	sttWebSocketPath              = "/api/stt/ws"
+	doubaoProtocolVersion         = 0x1
+	doubaoHeaderSize              = 0x1
+	doubaoMessageTypeFullClient   = 0x1
+	doubaoMessageTypeAudioOnly    = 0x2
+	doubaoMessageTypeFullServer   = 0x9
+	doubaoMessageTypeError        = 0xF
+	doubaoSerializationNone       = 0x0
+	doubaoSerializationJSON       = 0x1
+	doubaoCompressionGZIP         = 0x1
+	doubaoAudioChunkBytes         = 6400
+	doubaoAudioSampleRate         = 16000
+	doubaoAudioBits               = 16
+	doubaoAudioChannels           = 1
+	clientMessageStart            = "start"
+	clientMessageStop             = "stop"
+	serverMessageReady            = "ready"
+	serverMessageTranscript       = "transcript"
+	serverMessageCompleted        = "completed"
+	serverMessageError            = "error"
+	websocketClosePolicyViolation = 1008
+	websocketCloseInternalError   = 1011
 )
 
 type doubaoServerMessage struct {
@@ -92,7 +92,7 @@ func (s *Server) handleSTT(w http.ResponseWriter, r *http.Request) {
 
 	audioBuffer, err := io.ReadAll(file)
 	if err != nil {
-		writeError(w, err)
+		writeError(r.Context(), w, err)
 		return
 	}
 
@@ -106,14 +106,25 @@ func (s *Server) handleSTT(w http.ResponseWriter, r *http.Request) {
 		mimeType = fileHeader.Header.Get("Content-Type")
 	}
 
+	ContextLogf(
+		r.Context(),
+		"stt.request provider=%s filename=%q bytes=%d mime=%q",
+		s.config.STTProvider,
+		fileName,
+		len(audioBuffer),
+		mimeType,
+	)
+
 	text, err := s.transcribeAudioFile(r.Context(), audioBuffer, fileName, mimeType)
 	if err != nil {
-		writeError(w, err)
+		writeError(r.Context(), w, err)
 		return
 	}
 
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]string{"text": text})
+	ContextLogf(r.Context(), "stt.completed provider=%s text_chars=%d", s.config.STTProvider, len([]rune(text)))
+	ContextDebugf(r.Context(), "stt.result text=%q", truncate(text, 120))
 }
 
 func (s *Server) transcribeAudioFile(ctx context.Context, audioBuffer []byte, fileName, mimeType string) (string, error) {
@@ -132,6 +143,16 @@ func (s *Server) transcribeWithAlibaba(ctx context.Context, audioBuffer []byte, 
 	if s.config.AlibabaAPIKey == "" || s.config.AlibabaBaseURL == "" {
 		return "", newAppError(http.StatusInternalServerError, "语音服务配置不完整，请联系管理员")
 	}
+
+	ContextDebugf(
+		ctx,
+		"stt.alibaba upstream=%s model=%s filename=%q bytes=%d mime=%q",
+		logSafeURL(s.config.AlibabaBaseURL+"/audio/transcriptions"),
+		s.config.AlibabaSTTModel,
+		fileName,
+		len(audioBuffer),
+		mimeType,
+	)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -186,6 +207,8 @@ func (s *Server) transcribeWithAlibaba(ctx context.Context, audioBuffer []byte, 
 		return "", newAppError(http.StatusInternalServerError, "未能识别到语音内容，请重试")
 	}
 
+	ContextDebugf(ctx, "stt.alibaba upstream_ok text_chars=%d", len([]rune(text)))
+
 	return text, nil
 }
 
@@ -200,6 +223,15 @@ func (s *Server) transcribeWithDoubao(ctx context.Context, audioBuffer []byte, f
 	}
 
 	connectionID := "stt-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ContextDebugf(
+		ctx,
+		"stt.doubao upstream=%s connection_id=%s filename=%q upload_bytes=%d pcm_bytes=%d",
+		s.config.DoubaoSTTURL,
+		connectionID,
+		fileName,
+		len(audioBuffer),
+		len(pcmBuffer),
+	)
 	headers := http.Header{}
 	headers.Set("X-Api-App-Key", s.config.DoubaoSTTAppID)
 	headers.Set("X-Api-Access-Key", s.config.DoubaoSTTAccessKey)
@@ -226,6 +258,7 @@ func (s *Server) transcribeWithDoubao(ctx context.Context, audioBuffer []byte, f
 	if len(chunks) == 0 {
 		return "", newAppError(http.StatusBadRequest, "未检测到有效语音输入")
 	}
+	ContextDebugf(ctx, "stt.doubao chunk_count=%d chunk_size=%d", len(chunks), doubaoAudioChunkBytes)
 
 	for index, chunk := range chunks {
 		if err := upstream.WriteMessage(websocket.BinaryMessage, createDoubaoAudioPacket(chunk, index == len(chunks)-1)); err != nil {
@@ -267,10 +300,16 @@ func (s *Server) transcribeWithDoubao(ctx context.Context, audioBuffer []byte, f
 		return "", newAppError(http.StatusInternalServerError, "未能识别到语音内容，请重试")
 	}
 
+	ContextDebugf(ctx, "stt.doubao upstream_ok text_chars=%d connection_id=%s", len([]rune(latestText)), connectionID)
+
 	return latestText, nil
 }
 
 func (s *Server) handleSTTWebSocket(w http.ResponseWriter, r *http.Request) {
+	r = ensureRequestContext(r)
+	w.Header().Set("X-Request-Id", requestIDFromContext(r.Context()))
+	ContextLogf(r.Context(), "stt.ws.request origin=%q remote=%q", r.Header.Get("Origin"), r.RemoteAddr)
+
 	if s.config.STTProvider != "doubao" {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "当前 STT_PROVIDER 不是 doubao，流式识别不可用"})
 		return
@@ -283,38 +322,41 @@ func (s *Server) handleSTTWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	clientConn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		ContextErrorf(r.Context(), "stt.ws.upgrade_failed error=%v", err)
 		return
 	}
 
-	session := newSTTBridgeSession(s, clientConn)
+	session := newSTTBridgeSession(s, clientConn, r.Context())
 	session.run(r.Context())
 }
 
 type sttBridgeSession struct {
 	server *Server
 	client *websocket.Conn
+	ctx    context.Context
 
 	clientWriteMu sync.Mutex
 
-	upstream       *websocket.Conn
+	upstream        *websocket.Conn
 	upstreamWriteMu sync.Mutex
-	logID          string
-	traceID        string
-	connectionID   string
-	language       string
-	started        bool
-	stopped        bool
-	completed      bool
+	logID           string
+	traceID         string
+	connectionID    string
+	language        string
+	started         bool
+	stopped         bool
+	completed       bool
 	totalAudioBytes int
-	pendingChunk   []byte
-	latestText     string
-	queuedChunks   [][]byte
+	pendingChunk    []byte
+	latestText      string
+	queuedChunks    [][]byte
 }
 
-func newSTTBridgeSession(server *Server, client *websocket.Conn) *sttBridgeSession {
+func newSTTBridgeSession(server *Server, client *websocket.Conn, ctx context.Context) *sttBridgeSession {
 	return &sttBridgeSession{
 		server:       server,
 		client:       client,
+		ctx:          ctx,
 		language:     server.config.DoubaoSTTLanguage,
 		traceID:      "stt-" + strconv.FormatInt(time.Now().UnixNano(), 10),
 		connectionID: "conn-" + strconv.FormatInt(time.Now().UnixNano(), 10),
@@ -323,10 +365,20 @@ func newSTTBridgeSession(server *Server, client *websocket.Conn) *sttBridgeSessi
 
 func (s *sttBridgeSession) run(ctx context.Context) {
 	defer s.client.Close()
+	ContextLogf(s.ctx, "stt.ws.session_open trace_id=%s connection_id=%s language=%s", s.traceID, s.connectionID, s.language)
+	defer ContextLogf(
+		s.ctx,
+		"stt.ws.session_close trace_id=%s connection_id=%s total_audio_bytes=%d completed=%t",
+		s.traceID,
+		s.connectionID,
+		s.totalAudioBytes,
+		s.completed,
+	)
 
 	for {
 		messageType, payload, err := s.client.ReadMessage()
 		if err != nil {
+			ContextDebugf(s.ctx, "stt.ws.client_closed trace_id=%s error=%v", s.traceID, err)
 			s.closeUpstream()
 			return
 		}
@@ -351,12 +403,14 @@ func (s *sttBridgeSession) run(ctx context.Context) {
 			if strings.TrimSpace(control.Language) != "" {
 				s.language = strings.TrimSpace(control.Language)
 			}
+			ContextDebugf(s.ctx, "stt.ws.control_start trace_id=%s language=%s", s.traceID, s.language)
 			if err := s.openUpstream(ctx); err != nil {
 				s.fail(err)
 				return
 			}
 		case clientMessageStop:
 			s.stopped = true
+			ContextDebugf(s.ctx, "stt.ws.control_stop trace_id=%s total_audio_bytes=%d", s.traceID, s.totalAudioBytes)
 			s.finishStreaming()
 		default:
 			s.fail(newAppError(http.StatusBadRequest, "未知的 STT 控制消息"))
@@ -383,6 +437,14 @@ func (s *sttBridgeSession) openUpstream(ctx context.Context) error {
 	s.upstream = upstream
 	s.started = true
 	s.logID = response.Header.Get("X-Tt-Logid")
+	ContextLogf(
+		s.ctx,
+		"stt.ws.upstream_open trace_id=%s connection_id=%s log_id=%s language=%s",
+		s.traceID,
+		s.connectionID,
+		s.logID,
+		s.language,
+	)
 
 	if err := s.writeUpstream(websocket.BinaryMessage, createDoubaoFullRequestPacket(s.server.config, s.language, s.traceID)); err != nil {
 		return err
@@ -415,6 +477,7 @@ func (s *sttBridgeSession) readUpstream() {
 					LogID:   s.logID,
 				})
 			}
+			ContextDebugf(s.ctx, "stt.ws.upstream_closed trace_id=%s log_id=%s error=%v", s.traceID, s.logID, err)
 			_ = s.client.Close()
 			return
 		}
@@ -433,6 +496,7 @@ func (s *sttBridgeSession) readUpstream() {
 		text, utterances := extractTranscriptText(message.Payload)
 		if text != "" {
 			s.latestText = text
+			ContextDebugf(s.ctx, "stt.ws.transcript trace_id=%s final=%t text=%q", s.traceID, message.Final, truncate(text, 120))
 		}
 
 		messageType := serverMessageTranscript
@@ -451,6 +515,7 @@ func (s *sttBridgeSession) readUpstream() {
 		}
 
 		if message.Final {
+			ContextLogf(s.ctx, "stt.ws.completed trace_id=%s log_id=%s text_chars=%d total_audio_bytes=%d", s.traceID, s.logID, len([]rune(firstNonEmpty(text, s.latestText))), s.totalAudioBytes)
 			_ = s.client.Close()
 			return
 		}
@@ -468,6 +533,7 @@ func (s *sttBridgeSession) handleClientAudio(audioBuffer []byte) {
 	}
 
 	s.totalAudioBytes += len(audioBuffer)
+	ContextDebugf(s.ctx, "stt.ws.audio_chunk trace_id=%s chunk_bytes=%d total_audio_bytes=%d", s.traceID, len(audioBuffer), s.totalAudioBytes)
 
 	if s.upstream == nil {
 		s.queuedChunks = append(s.queuedChunks, audioBuffer)
@@ -503,6 +569,7 @@ func (s *sttBridgeSession) finishStreaming() {
 	}
 
 	if s.pendingChunk != nil {
+		ContextDebugf(s.ctx, "stt.ws.flush_final_chunk trace_id=%s chunk_bytes=%d", s.traceID, len(s.pendingChunk))
 		if err := s.writeUpstream(websocket.BinaryMessage, createDoubaoAudioPacket(s.pendingChunk, true)); err != nil {
 			s.fail(err)
 			return
@@ -511,6 +578,7 @@ func (s *sttBridgeSession) finishStreaming() {
 		return
 	}
 
+	ContextDebugf(s.ctx, "stt.ws.flush_empty_final trace_id=%s", s.traceID)
 	if err := s.writeUpstream(websocket.BinaryMessage, createDoubaoAudioPacket(nil, true)); err != nil {
 		s.fail(err)
 	}
@@ -554,7 +622,9 @@ func (s *sttBridgeSession) fail(err error) {
 		appErr = newAppError(http.StatusInternalServerError, "语音识别服务内部错误", err.Error())
 	}
 	if appErr.LogMessage != "" {
-		fmt.Println(appErr.LogMessage)
+		ContextErrorf(s.ctx, "stt.ws.failed trace_id=%s log_id=%s status=%d message=%q detail=%s", s.traceID, s.logID, appErr.Status, appErr.Message, appErr.LogMessage)
+	} else {
+		ContextErrorf(s.ctx, "stt.ws.failed trace_id=%s log_id=%s status=%d message=%q", s.traceID, s.logID, appErr.Status, appErr.Message)
 	}
 	_ = s.writeJSON(serverMessageError, map[string]any{
 		"message": appErr.Message,

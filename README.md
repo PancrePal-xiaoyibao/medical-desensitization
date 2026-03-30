@@ -41,15 +41,20 @@ NEXT_PUBLIC_WS_BASE_URL=
 
 3. 配置后端环境变量
 
-参考 [backend/.env.example](/Users/liueic/Documents/project/xiaoxinbao_UI/backend/.env.example)，把变量导入 Go 进程环境。
+复制`backend/.env.example` 为 `backend/.env`
+Go backend 启动时会自动读取这个文件；如果你已经在 shell 里显式导出同名环境变量，显式值优先，不会被 `backend/.env` 覆盖。
 
 最小配置通常至少包括：
 
 ```env
 BACKEND_PORT=8080
 CORS_ALLOWED_ORIGINS=http://localhost:3000,https://localhost:3000
-CHAT_API_URL=...
-CHAT_API_KEY=...
+LOG_LEVEL=log
+CHAT_PROVIDER=fastgpt
+CHAT_API_URL=https://your-fastgpt-host/api/v1/chat/completions
+CHAT_API_KEY=fastgpt-app-key
+CHAT_REQUEST_TIMEOUT_MS=300000
+FASTGPT_STREAM_DETAIL=false
 STT_PROVIDER=doubao
 TTS_PROVIDER=doubao
 DOUBAO_STT_APP_ID=...
@@ -58,6 +63,15 @@ DOUBAO_TTS_APP_ID=...
 DOUBAO_TTS_ACCESS_KEY=...
 DOUBAO_TTS_SPEAKER=...
 ```
+
+如果 chat 上游是 FastGPT：
+
+- `CHAT_PROVIDER=fastgpt`
+- `CHAT_API_URL` 使用 FastGPT 文档里的 `/api/v1/chat/completions`
+- 前端会自动把当前会话 ID 作为 `chatId` 传给后端，后端再转发给 FastGPT
+- `FASTGPT_STREAM_DETAIL=false` 时，返回的是 OpenAI 风格 SSE，当前前端可直接解析
+- 如果你后续要接 FastGPT 的工作流节点事件，再把 `FASTGPT_STREAM_DETAIL=true`
+- `LOG_LEVEL=log` 只输出常规日志；`LOG_LEVEL=debug` 会额外输出上游握手、SSE/STT WebSocket 细节和请求调试信息
 
 4. 启动后端
 

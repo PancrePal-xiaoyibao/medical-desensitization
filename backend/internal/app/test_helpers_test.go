@@ -19,7 +19,10 @@ func testConfig() Config {
 	return Config{
 		Port:                       "0",
 		CORSAllowedOrigins:         []string{"http://frontend.test"},
+		ChatProvider:               "openai",
 		ChatAPIKey:                 "chat-secret",
+		ChatRequestTimeout:         2 * time.Second,
+		FastGPTStreamDetail:        false,
 		STTProvider:                "alibaba",
 		TTSProvider:                "alibaba",
 		STTRequestTimeout:          2 * time.Second,
