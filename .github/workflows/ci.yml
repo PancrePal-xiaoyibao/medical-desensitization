@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 配置 Node.js
         uses: actions/setup-node@v4
@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 配置 Go
         uses: actions/setup-go@v6
