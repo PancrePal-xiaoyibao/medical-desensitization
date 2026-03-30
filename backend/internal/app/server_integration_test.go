@@ -69,7 +69,7 @@ func TestHandleChat_ProxiesSSE(t *testing.T) {
 		t.Fatalf("unexpected status: %d", response.StatusCode)
 	}
 	assertHeader(t, response.Header, "Access-Control-Allow-Origin", "http://frontend.test")
-	assertHeader(t, response.Header, "Content-Type", "text/event-stream")
+	assertHeader(t, response.Header, "Content-Type", "text/event-stream; charset=utf-8")
 	assertHeader(t, response.Header, "Cache-Control", "no-cache, no-transform")
 	assertHeader(t, response.Header, "X-Accel-Buffering", "no")
 

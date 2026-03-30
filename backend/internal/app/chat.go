@@ -99,11 +99,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if stream {
-		contentType := response.Header.Get("Content-Type")
-		if contentType == "" {
-			contentType = "text/event-stream; charset=utf-8"
-		}
-		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache, no-transform")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
@@ -117,11 +113,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := response.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/json; charset=utf-8"
-	}
-	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, response.Body)
 }

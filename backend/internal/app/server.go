@@ -57,6 +57,7 @@ func (s *Server) withLogging(route string, next http.HandlerFunc) http.HandlerFu
 		r = ensureRequestContext(r)
 		requestID := requestIDFromContext(r.Context())
 		w.Header().Set("X-Request-Id", requestID)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 
 		startedAt := time.Now()
 		recorder := &responseRecorder{
