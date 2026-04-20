@@ -376,7 +376,7 @@ export default function ChatInterface() {
   };
 
   // --- 核心发送处理 ---
-  const handleSend = async (overrideText?: string) => {
+  async function handleSend(overrideText?: string) {
     const userText = overrideText || input.trim();
     if (!userText || isLoading || isSendingRef.current || !activeSessionId)
       return;
@@ -404,7 +404,7 @@ export default function ChatInterface() {
       setLoading(false);
       isSendingRef.current = false;
     }
-  };
+  }
 
   // --- UI 效果 ---
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {

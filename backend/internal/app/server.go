@@ -35,6 +35,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.withLogging("healthz", s.handleHealthz))
 	mux.HandleFunc("/api/chat", s.withLogging("chat", s.withCORS(s.handleChat)))
+	mux.HandleFunc("/api/desensitize", s.withLogging("desensitize", s.withCORS(s.handleDesensitize)))
 	mux.HandleFunc("/api/tts", s.withLogging("tts", s.withCORS(s.handleTTS)))
 	mux.HandleFunc("/api/stt", s.withLogging("stt", s.withCORS(s.handleSTT)))
 	mux.HandleFunc("/api/stt/ws", s.handleSTTWebSocket)

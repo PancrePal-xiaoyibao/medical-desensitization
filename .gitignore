@@ -62,4 +62,6 @@ Desktop.ini
 .agent/
 .gemini/
 .claude/
+.gocache/
+.gomodcache/
 docs/

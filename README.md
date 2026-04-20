@@ -21,6 +21,20 @@
 - 前端通过 `NEXT_PUBLIC_API_BASE_URL` 和 `NEXT_PUBLIC_WS_BASE_URL` 访问后端。
 - 流式语音识别走 Go 后端的 WebSocket，再由 Go 后端代理到豆包。
 
+## 新增：病历脱敏工作台
+
+当前首页已经切换为“病历脱敏工作台”入口，支持：
+
+- 文本直贴脱敏
+- 图片 OCR 抽字后脱敏
+- PDF 文本层提取后脱敏
+- 手动选中文字补充脱敏规则
+- 将脱敏后的安全文本直接发送到现有 AI 对话流
+
+交付说明见：
+
+- [`MEDICAL_DESENSITIZATION_HANDOFF.md`](./MEDICAL_DESENSITIZATION_HANDOFF.md)
+
 ## 启动方式
 
 1. 安装前端依赖

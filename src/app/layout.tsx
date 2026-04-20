@@ -1,20 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "小馨宝 - 你的心灵陪伴者",
-  description: "小馨宝是一个专为癌症患者设计的心理支持 AI 伙伴，用温暖和关怀陪你度过每一刻。",
+  title: "病历脱敏工作台",
+  description: "在把病历、检查报告和患者资料发送给 AI 前，先自动识别并脱敏敏感信息。",
 };
 
 export default function RootLayout({
@@ -24,12 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        {children}
-      </body>
+      <body className="antialiased" suppressHydrationWarning>{children}</body>
     </html>
   );
 }
