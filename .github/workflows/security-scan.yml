@@ -95,6 +95,9 @@ jobs:
       - name: 输出 Go 版本
         run: go version
 
+      - name: 同步 Go 模块元数据
+        run: go mod tidy
+
       - name: 安装 govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 

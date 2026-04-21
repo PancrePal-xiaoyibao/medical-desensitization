@@ -47,6 +47,10 @@ jobs:
         with:
           languages: ${{ matrix.language }}
 
+      - name: 同步 Go 模块元数据
+        if: matrix.language == 'go'
+        run: cd backend && go mod tidy
+
       - name: 构建 Go 代码
         if: matrix.language == 'go'
         run: ${{ matrix.build-command }}
