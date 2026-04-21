@@ -35,17 +35,17 @@ jobs:
       - name: 签出代码
         uses: actions/checkout@v6
 
-      - name: 初始化 CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-
       - name: 配置 Go
         if: matrix.language == 'go'
         uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+
+      - name: 初始化 CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
 
       - name: 构建 Go 代码
         if: matrix.language == 'go'
