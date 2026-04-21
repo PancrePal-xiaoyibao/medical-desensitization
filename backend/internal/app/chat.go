@@ -124,6 +124,9 @@ func (s *Server) buildChatUpstreamPayload(body chatRequest, stream bool) map[str
 		"messages": messages,
 		"stream":   stream,
 	}
+	if strings.TrimSpace(s.config.ChatModel) != "" {
+		payload["model"] = s.config.ChatModel
+	}
 
 	if s.config.ChatProvider != "fastgpt" {
 		return payload

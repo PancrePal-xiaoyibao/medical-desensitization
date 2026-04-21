@@ -24,6 +24,7 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import React from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { getApiURL } from '@/lib/client/api';
 import { cn } from '@/lib/utils';
@@ -81,21 +82,46 @@ const typeLabels: Record<string, string> = {
 };
 
 const quickRuleTypes = [
-  { type: 'name', label: '标成姓名' },
-  { type: 'phone', label: '标成手机号' },
-  { type: 'id_card', label: '标成身份证' },
-  { type: 'medical_id', label: '标成病历号' },
-  { type: 'address', label: '标成地址' },
+  { type: 'name', label: '这是姓名' },
+  { type: 'phone', label: '这是手机号' },
+  { type: 'id_card', label: '这是身份证号' },
+  { type: 'medical_id', label: '这是病历号' },
+  { type: 'address', label: '这是地址' },
 ];
+
+const nonNameMedicalWords = new Set([
+  '医生',
+  '主任',
+  '护士',
+  '预约',
+  '门诊',
+  '住院',
+  '复诊',
+  '挂号',
+  '病房',
+  '床位',
+  '加号',
+  '检查',
+  '报告',
+  '取号',
+  '药房',
+  '缴费',
+  '住院部',
+  '门诊部',
+  '科室',
+]);
 
 export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [text, setText] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<RedactionResponse | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [copied, setCopied] = useState<'original' | 'redacted' | null>(null);
+  const [copied, setCopied] = useState<
+    'original' | 'redacted' | 'share_ai' | 'share_family' | null
+  >(null);
   const [manualRules, setManualRules] = useState<ManualRule[]>([]);
   const [selection, setSelection] = useState('');
   const [extractStatus, setExtractStatus] = useState<'idle' | 'extracting' | 'done' | 'error'>(
@@ -103,8 +129,9 @@ export default function Home() {
   );
   const [extractMessage, setExtractMessage] = useState('');
   const [assistantPrompt, setAssistantPrompt] = useState(
-    '请基于下面这份已经脱敏的医疗资料，给出清晰、克制、非诊断性的建议，并指出还需要补充哪些信息。'
+    '请帮我看看这份资料里需要重点注意什么，还需要补充哪些信息。'
   );
+  const aiChatEnabled = process.env.NEXT_PUBLIC_AI_CHAT_ENABLED === 'true';
 
   const initUser = useChatStore((state) => state.initUser);
   const sessions = useChatStore((state) => state.sessions);
@@ -114,6 +141,7 @@ export default function Home() {
   const setLoading = useChatStore((state) => state.setLoading);
   const isChatLoading = useChatStore((state) => state.isLoading);
   const createNewSession = useChatStore((state) => state.createNewSession);
+  const switchSession = useChatStore((state) => state.switchSession);
   const userId = useChatStore((state) => state.userId);
 
   useEffect(() => {
@@ -149,11 +177,30 @@ export default function Home() {
       }));
   }, [result]);
 
-  const recentMessages = useMemo(() => currentSession?.messages.slice(-6) ?? [], [currentSession]);
+  const selectionParts = useMemo(() => splitSelectionIntoParts(selection), [selection]);
+  const highlightedTextPreview = useMemo(
+    () => buildHighlightedTextPreview(text, manualRules, removeManualRule),
+    [text, manualRules]
+  );
+  const aiSendHint = useMemo(() => {
+    if (!aiChatEnabled) {
+      return '这台演示环境还没有连上 AI 服务，所以现在还不能发送。';
+    }
+
+    if (isChatLoading) {
+      return 'AI 正在阅读刚才发过去的内容，请稍等一下。';
+    }
+
+    if (!result?.redactedText) {
+      return '要先点上面的“开始处理”，等页面出现“处理后的内容”以后，这里才能发送。';
+    }
+
+    return '现在可以把处理后的内容发给 AI 了。';
+  }, [aiChatEnabled, isChatLoading, result?.redactedText]);
 
   async function handleSubmit() {
     if (!text.trim()) {
-      setError('先粘贴一段病历文字，或者上传一个能抽出文字的文件。');
+      setError('请先粘贴文字，或者上传一张图片、一个 PDF、一个文本文件。');
       return;
     }
 
@@ -172,14 +219,14 @@ export default function Home() {
 
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(payload?.error || '脱敏处理失败，请稍后再试。');
+        throw new Error(payload?.error || '处理没有成功，请稍后再试。');
       }
 
       setResult(payload as RedactionResponse);
     } catch (submitError) {
       setResult(null);
       setError(
-        submitError instanceof Error ? submitError.message : '脱敏处理失败，请稍后再试。'
+        submitError instanceof Error ? submitError.message : '处理没有成功，请稍后再试。'
       );
     } finally {
       setIsSubmitting(false);
@@ -198,7 +245,7 @@ export default function Home() {
     }
 
     setExtractStatus('extracting');
-    setExtractMessage('正在读取文件内容...');
+    setExtractMessage('正在读取内容，请稍等...');
     setError('');
 
     try {
@@ -207,18 +254,18 @@ export default function Home() {
       });
 
       if (!extractedText.trim()) {
-        throw new Error('这个文件里暂时没有抽出可用文字。可以试试换图片，或先做 OCR 后再粘贴进来。');
+        throw new Error('这个文件里暂时没有读出文字。你可以换一张更清楚的图片，或者把文字直接粘贴进来。');
       }
 
       setText(extractedText.trim());
       setExtractStatus('done');
-      setExtractMessage(`已从 ${file.name} 提取文字，你可以继续人工修正后再脱敏。`);
+      setExtractMessage(`已经从 ${file.name} 读出文字，你可以先检查一下，再继续处理。`);
     } catch (extractError) {
       setExtractStatus('error');
       setExtractMessage(
         extractError instanceof Error
           ? extractError.message
-          : '文件解析失败，请换一个文件重试。'
+          : '文件读取失败，请换一个文件再试。'
       );
     }
   }
@@ -232,6 +279,9 @@ export default function Home() {
     setSelection('');
     setExtractStatus('idle');
     setExtractMessage('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   }
 
   function captureSelection() {
@@ -267,7 +317,8 @@ export default function Home() {
         },
       ];
     });
-    setSelection('');
+    const nextParts = splitSelectionIntoParts(selection).filter((part) => part !== selectedText);
+    setSelection(nextParts[0] || '');
   }
 
   function removeManualRule(ruleId: string) {
@@ -275,6 +326,21 @@ export default function Home() {
   }
 
   async function handleCopy(content: string, type: 'original' | 'redacted') {
+    await navigator.clipboard.writeText(content);
+    setCopied(type);
+    window.setTimeout(() => setCopied(null), 1600);
+  }
+
+  async function handleShortcutCopy(type: 'share_ai' | 'share_family') {
+    if (!result?.redactedText) {
+      return;
+    }
+
+    const content =
+      type === 'share_ai'
+        ? `${assistantPrompt.trim() || '请帮我看看这份资料里需要重点注意什么。'}\n\n以下是已经遮掉个人信息的内容：\n${result.redactedText}`
+        : `这是已经遮掉个人信息后的内容，你可以直接看：\n\n${result.redactedText}`;
+
     await navigator.clipboard.writeText(content);
     setCopied(type);
     window.setTimeout(() => setCopied(null), 1600);
@@ -324,6 +390,9 @@ export default function Home() {
     if (!result?.redactedText) {
       return;
     }
+    if (!aiChatEnabled) {
+      return;
+    }
 
     const message = `${assistantPrompt}\n\n以下是已脱敏资料：\n${result.redactedText}`;
     await sendToAssistant(message);
@@ -331,6 +400,9 @@ export default function Home() {
 
   async function handleFollowupSend() {
     if (!assistantPrompt.trim()) {
+      return;
+    }
+    if (!aiChatEnabled) {
       return;
     }
 
@@ -350,22 +422,22 @@ export default function Home() {
             <div className="max-w-3xl">
               <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-sm font-medium text-teal-800">
                 <Shield className="h-4 w-4" />
-                医疗资料脱敏工作台
+                发给 AI 前，先保护隐私
               </div>
               <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-stone-900 sm:text-5xl">
-                先抽文字，再脱敏，再把安全版本交给 AI。
+                把病历里的个人信息遮掉后，再发给 AI。
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600 sm:text-base">
-                这一版已经把三条链路串起来了：图片 OCR、PDF 文本提取、手动选中文字打规则，以及把脱敏后的资料直接送进你现有的 AI 对话流。
+                你可以上传图片、PDF，或者直接粘贴文字。我们会先帮你找出姓名、手机号、身份证号这些个人信息，再给你一份更安全的内容。
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                ['图片 OCR', '浏览器端抽字'],
-                ['PDF 提取', '优先读文本层'],
-                ['手动规则', '选中文字即标注'],
-                ['安全问 AI', '沿用现有会话'],
+                ['上传图片', '帮你读出文字'],
+                ['上传 PDF', '尽量读出内容'],
+                ['手动标记', '把漏掉的信息补上'],
+                ['再发给 AI', '更安心一些'],
               ].map(([title, sub]) => (
                 <div
                   key={title}
@@ -389,9 +461,9 @@ export default function Home() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-lg font-semibold text-stone-900">1. 抽取原文</p>
+                  <p className="text-lg font-semibold text-stone-900">1. 先把内容放进来</p>
                   <p className="mt-1 text-sm text-stone-500">
-                    支持文本直贴、图片 OCR、PDF 文本层提取和常见文本文件读取。
+                    可以直接粘贴文字，也可以上传图片、PDF 或文本文件。
                   </p>
                 </div>
                 <button
@@ -399,7 +471,7 @@ export default function Home() {
                   onClick={() => setText(demoText)}
                   className="rounded-full border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
                 >
-                  填充示例
+                  试试示例
                 </button>
               </div>
 
@@ -409,16 +481,17 @@ export default function Home() {
                     <Upload className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-stone-900">上传病历文件</p>
+                    <p className="font-medium text-stone-900">上传资料</p>
                     <p className="mt-1 text-sm leading-6 text-stone-500">
-                      图片会尝试 OCR；PDF 会优先提取文本层；TXT / MD / JSON / CSV 会直接读取。首次图片 OCR 可能需要一点时间下载语言包。
+                      如果你上传的是图片，我们会尽量把图里的字读出来；如果是 PDF 或文本文件，也会尽量帮你读出内容。
                     </p>
                     <p className="mt-3 text-sm text-stone-700">
-                      {selectedFile ? `当前文件：${selectedFile.name}` : '点击选择文件'}
+                      {selectedFile ? `当前文件：${selectedFile.name}` : '点这里选择文件'}
                     </p>
                   </div>
                 </div>
                 <input
+                  ref={fileInputRef}
                   type="file"
                   onChange={handleFileChange}
                   className="sr-only"
@@ -453,10 +526,10 @@ export default function Home() {
               <div className="mt-5">
                 <div className="mb-2 flex items-center justify-between">
                   <label htmlFor="medical-text" className="text-sm font-medium text-stone-700">
-                    病历文字
+                    文字内容
                   </label>
                   <span className="text-xs text-stone-400">
-                    在这个区域选中文字，就可以手动打规则
+                    如果有漏掉的个人信息，可以在这里手动选中处理
                   </span>
                 </div>
                 <textarea
@@ -466,25 +539,83 @@ export default function Home() {
                   onChange={(event) => setText(event.target.value)}
                   onMouseUp={captureSelection}
                   onKeyUp={captureSelection}
-                  placeholder="例如：姓名、手机号、身份证号、住址、病案号、主诉、既往史……"
+                  placeholder="你可以把病历、检查结果、聊天记录里的文字直接粘贴到这里。"
                   className="min-h-[280px] w-full rounded-[24px] border border-stone-200 bg-stone-50/80 px-4 py-4 text-sm leading-7 text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-teal-700 focus:bg-white"
                 />
+
+                {manualRules.length > 0 && (
+                  <div className="mt-4 rounded-[24px] border border-teal-200 bg-teal-50/50 p-4">
+                  <div className="mb-2 text-sm font-medium text-teal-900">
+                    已经标记过的内容
+                  </div>
+                  <div className="mb-3 text-xs text-teal-700">
+                    如果标错了，点一下高亮的那一段就可以取消。
+                  </div>
+                  <div className="max-h-[220px] overflow-y-auto whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                    {highlightedTextPreview}
+                  </div>
+                </div>
+                )}
               </div>
 
               <div className="mt-5 rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-stone-800">
                   <WandSparkles className="h-4 w-4 text-teal-700" />
-                  2. 手动标注规则
+                  2. 如果有漏掉的，再手动补一下
                 </div>
                 <p className="mt-2 text-sm leading-6 text-stone-500">
-                  先在上面的文本框里选中内容，再点击下面的规则按钮。适合处理昵称、医院内部编号、模糊写法等自动规则抓不到的内容。
+                  先在上面的文字里选中一小段，再点下面的按钮。这样可以把系统没认出来的信息补上。
                 </p>
 
                 <div className="mt-3 rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">
-                  当前选中：
-                  <span className="ml-2 font-medium text-stone-900">
-                    {selection || '还没有选中任何文字'}
-                  </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <label className="block text-xs font-medium tracking-[0.12em] text-stone-400">
+                        你要处理的这段内容
+                      </label>
+                      <input
+                        type="text"
+                        value={selection}
+                        onChange={(event) => setSelection(event.target.value)}
+                        placeholder="先在上面的文字里选一段，或者直接在这里输入。"
+                        className="mt-2 w-full border-0 bg-transparent p-0 text-lg font-medium text-stone-900 outline-none placeholder:text-stone-400"
+                      />
+                    </div>
+                    {selectionParts.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelection(selectionParts[0])}
+                        className="shrink-0 rounded-full border border-stone-300 px-3 py-2 text-xs font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
+                      >
+                        先处理第一段
+                      </button>
+                    )}
+                  </div>
+
+                  {selectionParts.length > 1 && (
+                    <div className="mt-3">
+                      <div className="text-xs text-stone-400">
+                        这段里好像有几块内容。你可以点下面任意一块，分开处理。
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectionParts.map((part) => (
+                          <button
+                            key={part}
+                            type="button"
+                            onClick={() => setSelection(part)}
+                            className={cn(
+                              'rounded-full border px-3 py-1.5 text-sm transition',
+                              part === selection
+                                ? 'border-stone-900 bg-stone-900 text-white'
+                                : 'border-stone-300 bg-stone-50 text-stone-700 hover:border-stone-900 hover:text-stone-900'
+                            )}
+                          >
+                            {part}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -527,12 +658,12 @@ export default function Home() {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      正在脱敏
+                      正在处理
                     </>
                   ) : (
                     <>
                       <ScanSearch className="h-4 w-4" />
-                      开始识别并脱敏
+                      开始处理
                     </>
                   )}
                 </button>
@@ -542,7 +673,7 @@ export default function Home() {
                   onClick={handleReset}
                   className="rounded-full border border-stone-300 px-5 py-3 text-sm font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
                 >
-                  清空重来
+                  清空
                 </button>
               </div>
 
@@ -564,71 +695,151 @@ export default function Home() {
             >
               <div className="flex items-center gap-2 text-lg font-semibold text-stone-900">
                 <Bot className="h-5 w-5 text-teal-700" />
-                3. 安全问 AI
+                3. 如果你愿意，再发给 AI
               </div>
               <p className="mt-2 text-sm leading-6 text-stone-500">
-                这块直接复用了你现有的聊天会话存储和 `/api/chat` 流式接口。你可以把脱敏后的完整文本一次发过去，也可以继续追问。
+                处理完以后，你可以把这份更安全的内容发给 AI，请它帮你一起看看。
               </p>
+
+              {!aiChatEnabled && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  现在这个演示页面还没有连上真实的 AI 回复服务，所以这里先不能直接发送。等接入正式服务后，这个按钮就可以用了。
+                </div>
+              )}
 
               <textarea
                 value={assistantPrompt}
                 onChange={(event) => setAssistantPrompt(event.target.value)}
-                placeholder="写下你想让 AI 重点回答什么"
+                placeholder="比如：请帮我看看接下来最该问医生什么问题。"
                 className="mt-4 min-h-[120px] w-full rounded-[24px] border border-stone-200 bg-stone-50/80 px-4 py-4 text-sm leading-7 text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-teal-700 focus:bg-white"
               />
 
               <div className="mt-4 flex flex-wrap gap-3">
                 <button
                   type="button"
-                  disabled={!result?.redactedText || isChatLoading}
+                  disabled={!result?.redactedText || isChatLoading || !aiChatEnabled}
                   onClick={() => void handleAskAI()}
                   className="inline-flex items-center gap-2 rounded-full bg-teal-700 px-5 py-3 text-sm font-medium text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-stone-400"
                 >
                   {isChatLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      AI 正在分析
+                      AI 正在阅读
                     </>
                   ) : (
                     <>
                       <MessageSquareText className="h-4 w-4" />
-                      发送脱敏文本给 AI
+                      发给 AI 看看
                     </>
                   )}
                 </button>
 
                 <button
                   type="button"
-                  disabled={!assistantPrompt.trim() || isChatLoading}
+                  disabled={!assistantPrompt.trim() || isChatLoading || !aiChatEnabled}
                   onClick={() => void handleFollowupSend()}
                   className="rounded-full border border-stone-300 px-5 py-3 text-sm font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  只发送当前问题
+                  只发这句
                 </button>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {recentMessages.length === 0 ? (
+              <div
+                className={cn(
+                  'mt-3 rounded-2xl px-4 py-3 text-sm',
+                  result?.redactedText && aiChatEnabled && !isChatLoading
+                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border border-stone-200 bg-stone-50 text-stone-600'
+                )}
+              >
+                {aiSendHint}
+              </div>
+
+                <div className="mt-5 space-y-3">
+                {sessions.length === 0 ? (
                   <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 text-sm leading-6 text-stone-500">
-                    还没有发送到 AI。先完成脱敏，再点击“发送脱敏文本给 AI”。
+                    你还没有和 AI 聊过。处理好内容后，就可以从这里开始。
                   </div>
                 ) : (
-                  recentMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={cn(
-                        'rounded-[24px] p-4 text-sm leading-7',
-                        message.role === 'user'
-                          ? 'bg-stone-900 text-white'
-                          : 'border border-stone-200 bg-stone-50 text-stone-800'
-                      )}
-                    >
-                      <div className="mb-2 text-xs uppercase tracking-[0.18em] opacity-70">
-                        {message.role === 'user' ? '用户' : '小馨宝'}
+                  <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                    <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-3">
+                      <div className="mb-2 text-sm font-medium text-stone-700">历史对话</div>
+                      <div className="space-y-2">
+                        {sessions.map((session) => (
+                          <button
+                            key={session.id}
+                            type="button"
+                            onClick={() => switchSession(session.id)}
+                            className={cn(
+                              'w-full rounded-2xl px-3 py-3 text-left transition',
+                              session.id === activeSessionId
+                                ? 'bg-stone-900 text-white'
+                                : 'bg-white text-stone-700 hover:bg-stone-100'
+                            )}
+                          >
+                            <div className="line-clamp-2 text-sm font-medium">
+                              {session.title || '新对话'}
+                            </div>
+                            <div
+                              className={cn(
+                                'mt-1 text-xs',
+                                session.id === activeSessionId ? 'text-white/70' : 'text-stone-400'
+                              )}
+                            >
+                              {session.messages.length === 0
+                                ? '还没有内容'
+                                : `${session.messages.length} 条消息`}
+                            </div>
+                          </button>
+                        ))}
                       </div>
-                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
                     </div>
-                  ))
+
+                    <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-stone-800">
+                            {currentSession?.title || '当前对话'}
+                          </div>
+                          <div className="mt-1 text-xs text-stone-400">
+                            这里会保留你和 AI 说过的话，方便回头查看。
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => switchSession(createNewSession())}
+                          className="rounded-full border border-stone-300 px-3 py-2 text-xs font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
+                        >
+                          新建对话
+                        </button>
+                      </div>
+
+                      <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
+                        {currentSession?.messages.length ? (
+                          currentSession.messages.map((message) => (
+                            <div
+                              key={message.id}
+                              className={cn(
+                                'rounded-[24px] p-4 text-sm leading-7',
+                                message.role === 'user'
+                                  ? 'bg-stone-900 text-white'
+                                  : 'border border-stone-200 bg-white text-stone-800'
+                              )}
+                            >
+                              <div className="mb-2 text-xs uppercase tracking-[0.18em] opacity-70">
+                                {message.role === 'user' ? '我说的' : 'AI 回复'}
+                              </div>
+                              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[24px] border border-dashed border-stone-300 bg-white p-4 text-sm leading-6 text-stone-500">
+                            这一组对话里还没有内容。你可以先发一段处理后的资料，再继续问问题。
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </motion.section>
@@ -642,16 +853,16 @@ export default function Home() {
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-lg font-semibold">脱敏结果</p>
+                <p className="text-lg font-semibold">处理结果</p>
                 <p className="mt-1 text-sm text-stone-400">
-                  自动规则和手动规则会一起生效，结果可以直接复制或继续送给 AI。
+                  这里会显示处理前后的内容，方便你自己检查。
                 </p>
               </div>
 
               {result && (
                 <div className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-2 text-sm text-stone-200">
                   <BadgeCheck className="h-4 w-4 text-emerald-400" />
-                  已识别 {result.summary.total} 项敏感信息
+                  已经遮掉 {result.summary.total} 处个人信息
                 </div>
               )}
             </div>
@@ -665,7 +876,7 @@ export default function Home() {
                   <div>
                     <p className="font-medium text-white">结果会显示在这里</p>
                     <p className="mt-2 text-sm leading-7 text-stone-400">
-                      先上传一张病历图、一个 PDF，或者直接粘贴文本。抽字完成后再执行脱敏，就能看到识别项、统计和可直接发给 AI 的安全版本。
+                      先上传一张病历图片、一个 PDF，或者直接粘贴文字。处理完成后，你会看到处理前和处理后的内容。
                     </p>
                   </div>
                 </div>
@@ -675,15 +886,15 @@ export default function Home() {
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
                     {
-                      label: '敏感项总数',
+                      label: '遮掉了多少处',
                       value: String(result.summary.total),
                     },
                     {
-                      label: '原文长度',
+                      label: '一共有多少字',
                       value: `${result.summary.characterCount} 字`,
                     },
                     {
-                      label: '来源',
+                      label: '这份内容来自',
                       value: result.fileName || result.sourceType,
                     },
                   ].map((item) => (
@@ -715,7 +926,7 @@ export default function Home() {
                 <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-sm text-stone-300">
                     <ClipboardCheck className="h-4 w-4 text-teal-300" />
-                    识别类别
+                    这次处理了什么
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {stats.map((item) => (
@@ -730,7 +941,7 @@ export default function Home() {
                 </div>
 
                 <ResultBlock
-                  title="原始文本"
+                  title="原来的内容"
                   content={result.originalText}
                   tone="light"
                   copied={copied === 'original'}
@@ -742,17 +953,63 @@ export default function Home() {
                 </div>
 
                 <ResultBlock
-                  title="脱敏后文本"
+                  title="处理后的内容"
                   content={result.redactedText}
                   tone="highlight"
                   copied={copied === 'redacted'}
                   onCopy={() => void handleCopy(result.redactedText, 'redacted')}
                 />
 
+                <div className="rounded-[24px] border border-teal-400/20 bg-teal-400/10 p-4">
+                  <div className="flex items-center gap-2 text-sm text-teal-100">
+                    <Sparkles className="h-4 w-4 text-teal-300" />
+                    你可以直接复制出去
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-stone-300">
+                    如果你准备把这份内容发给 AI、家人或医生，可以直接点下面的按钮，不用自己重新整理。
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleShortcutCopy('share_ai')}
+                      className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-stone-900 transition hover:bg-teal-50"
+                    >
+                      {copied === 'share_ai' ? (
+                        <>
+                          <BadgeCheck className="h-4 w-4" />
+                          已复制给 AI 用的内容
+                        </>
+                      ) : (
+                        <>
+                          <MessageSquareText className="h-4 w-4" />
+                          复制给 AI
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleShortcutCopy('share_family')}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-stone-100 transition hover:border-white/30 hover:bg-white/5"
+                    >
+                      {copied === 'share_family' ? (
+                        <>
+                          <BadgeCheck className="h-4 w-4" />
+                          已复制给家人或医生
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          复制给家人或医生
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-sm text-stone-300">
                     <Sparkles className="h-4 w-4 text-teal-300" />
-                    识别明细
+                    每一处是怎么处理的
                   </div>
                   <div className="mt-3 space-y-3">
                     {result.items.map((item, index) => (
@@ -775,10 +1032,10 @@ export default function Home() {
                             )}
                           >
                             {item.confidence === 'high'
-                              ? '高置信度'
+                              ? '系统比较确定'
                               : item.confidence === 'manual'
-                                ? '手动规则'
-                                : '中置信度'}
+                                ? '你手动标记'
+                                : '系统猜测到'}
                           </span>
                         </div>
                         <p className="mt-3 break-all font-mono text-sm text-stone-300">
@@ -818,6 +1075,140 @@ function serializeManualRules(manualRules: ManualRule[]) {
   return manualRules.map(({ type, text, label }) => ({ type, text, label }));
 }
 
+function buildHighlightedTextPreview(
+  text: string,
+  manualRules: ManualRule[],
+  onRemoveRule: (ruleId: string) => void
+) {
+  if (!text.trim() || manualRules.length === 0) {
+    return text;
+  }
+
+  const sortedRules = [...manualRules]
+    .map((rule) => ({ ...rule, text: rule.text.trim() }))
+    .filter((rule) => rule.text)
+    .sort((a, b) => b.text.length - a.text.length);
+
+  if (sortedRules.length === 0) {
+    return text;
+  }
+
+  const pattern = new RegExp(
+    sortedRules.map((rule) => escapeRegExp(rule.text)).join('|'),
+    'g'
+  );
+
+  const chunks: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(pattern)) {
+    const matchedText = match[0];
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      chunks.push(text.slice(lastIndex, index));
+    }
+
+    const matchedRule = sortedRules.find((rule) => rule.text === matchedText);
+    chunks.push(
+      <button
+        key={`${matchedText}-${index}`}
+        type="button"
+        onClick={() => {
+          if (matchedRule) {
+            onRemoveRule(matchedRule.id);
+          }
+        }}
+        className="rounded bg-teal-200/80 px-1 py-0.5 text-left text-stone-900 transition hover:bg-rose-200/80"
+      >
+        {matchedText}
+        {matchedRule ? `（${matchedRule.label}）` : ''}
+      </button>
+    );
+    lastIndex = index + matchedText.length;
+  }
+
+  if (lastIndex < text.length) {
+    chunks.push(text.slice(lastIndex));
+  }
+
+  return chunks;
+}
+
+function splitSelectionIntoParts(selection: string) {
+  const text = selection.trim();
+  if (!text) {
+    return [];
+  }
+
+  const groups = text
+    .split(/[\s,，、；;|/]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const groupedMatches = groups.flatMap((group) => {
+    const mergedName = normalizePossibleChineseName(group);
+    if (mergedName && mergedName !== text) {
+      return [mergedName];
+    }
+
+    const tokens = group.match(/[\p{Script=Han}]{2,6}|\d+|[A-Za-z]+/gu) ?? [];
+    if (tokens.length > 0) {
+      return tokens;
+    }
+
+    return [group];
+  });
+
+  const unique = Array.from(
+    new Set(
+      groupedMatches
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+        .filter((item) => item !== text)
+        .filter((item) => !isNoiseFragment(item))
+    )
+  );
+
+  return unique.length > 1 ? unique : [];
+}
+
+function normalizePossibleChineseName(value: string) {
+  const compact = value.replace(/[\s·•・]+/g, '').trim();
+  if (/^[\p{Script=Han}]{2,4}$/u.test(compact) && !nonNameMedicalWords.has(compact)) {
+    return compact;
+  }
+
+  return '';
+}
+
+function isNoiseFragment(value: string) {
+  if (value.length <= 1) {
+    return true;
+  }
+
+  if (nonNameMedicalWords.has(value)) {
+    return false;
+  }
+
+  if (/^[\p{Script=Han}]{2,4}$/u.test(value)) {
+    return false;
+  }
+
+  if (/^\d+$/.test(value)) {
+    return false;
+  }
+
+  if (/^[A-Za-z]+$/.test(value)) {
+    return false;
+  }
+
+  return true;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function extractTextFromFile(
   file: File,
   onStatus: (message: string) => void
@@ -831,12 +1222,12 @@ async function extractTextFromFile(
     return extractImageText(file, onStatus);
   }
 
-  onStatus('正在读取文本文件...');
+  onStatus('正在读取文件...');
   return await file.text();
 }
 
 async function extractPdfText(file: File, onStatus: (message: string) => void): Promise<string> {
-  onStatus('正在读取 PDF 文本层...');
+  onStatus('正在读取 PDF 内容...');
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const data = new Uint8Array(await file.arrayBuffer());
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -847,7 +1238,7 @@ async function extractPdfText(file: File, onStatus: (message: string) => void): 
   const parts: string[] = [];
 
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-    onStatus(`正在提取 PDF 第 ${pageNumber} 页文字...`);
+    onStatus(`正在读取 PDF 第 ${pageNumber} 页...`);
     const page = await document.getPage(pageNumber);
     const content = await page.getTextContent();
     const text = content.items
@@ -861,19 +1252,19 @@ async function extractPdfText(file: File, onStatus: (message: string) => void): 
   }
 
   if (parts.length === 0) {
-    throw new Error('这个 PDF 更像扫描件，暂时没读到文本层。可以把页面导成图片后再试 OCR。');
+    throw new Error('这个 PDF 暂时没有读出文字。你可以把它截图后当图片上传，或者把文字直接粘贴进来。');
   }
 
   return parts.join('\n\n');
 }
 
 async function extractImageText(file: File, onStatus: (message: string) => void): Promise<string> {
-  onStatus('正在准备 OCR 模型...');
+  onStatus('正在准备识别图片里的文字...');
   const { createWorker } = await import('tesseract.js');
   const worker = await createWorker('chi_sim+eng');
 
   try {
-    onStatus('正在识别图片中的文字...');
+    onStatus('正在识别图片里的文字...');
     const result = await worker.recognize(file);
     return result.data.text;
   } finally {

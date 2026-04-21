@@ -16,6 +16,8 @@ type Config struct {
 	ChatProvider        string
 	ChatAPIURL          string
 	ChatAPIKey          string
+	ChatModel           string
+	ChatAPIResolvedIP   string
 	ChatRequestTimeout  time.Duration
 	FastGPTStreamDetail bool
 
@@ -60,6 +62,8 @@ func LoadConfig() Config {
 		ChatProvider:               normalizeChatProvider(os.Getenv("CHAT_PROVIDER")),
 		ChatAPIURL:                 os.Getenv("CHAT_API_URL"),
 		ChatAPIKey:                 os.Getenv("CHAT_API_KEY"),
+		ChatModel:                  getenv("CHAT_MODEL", "sf-glm-4.5-air"),
+		ChatAPIResolvedIP:          strings.TrimSpace(os.Getenv("CHAT_API_RESOLVED_IP")),
 		ChatRequestTimeout:         time.Duration(parsePositiveInt(os.Getenv("CHAT_REQUEST_TIMEOUT_MS"), 300_000)) * time.Millisecond,
 		FastGPTStreamDetail:        parseBool(os.Getenv("FASTGPT_STREAM_DETAIL"), false),
 		STTProvider:                normalizeProvider(os.Getenv("STT_PROVIDER")),

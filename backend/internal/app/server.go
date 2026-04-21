@@ -2,8 +2,11 @@ package app
 
 import (
 	"bufio"
+	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -17,10 +20,18 @@ type Server struct {
 }
 
 func NewServer(config Config) *Server {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+	configureChatDialFallback(transport, config)
+
 	return &Server{
 		config: config,
 		httpClient: &http.Client{
-			Timeout: 0,
+			Timeout:   0,
+			Transport: transport,
 		},
 		upgrader: websocket.Upgrader{
 			EnableCompression: false,
@@ -28,6 +39,45 @@ func NewServer(config Config) *Server {
 				return isOriginAllowed(r.Header.Get("Origin"), config.CORSAllowedOrigins)
 			},
 		},
+	}
+}
+
+func configureChatDialFallback(transport *http.Transport, config Config) {
+	if transport == nil || strings.TrimSpace(config.ChatAPIResolvedIP) == "" || strings.TrimSpace(config.ChatAPIURL) == "" {
+		return
+	}
+
+	chatURL, err := url.Parse(config.ChatAPIURL)
+	if err != nil || chatURL.Hostname() == "" {
+		return
+	}
+
+	chatHost := chatURL.Hostname()
+	chatPort := chatURL.Port()
+	if chatPort == "" {
+		if strings.EqualFold(chatURL.Scheme, "http") {
+			chatPort = "80"
+		} else {
+			chatPort = "443"
+		}
+	}
+
+	baseDialer := &net.Dialer{Timeout: 30 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if addr != net.JoinHostPort(chatHost, chatPort) {
+			return baseDialer.DialContext(ctx, network, addr)
+		}
+
+		conn, err := baseDialer.DialContext(ctx, network, addr)
+		if err == nil {
+			return conn, nil
+		}
+
+		if !strings.Contains(err.Error(), "no such host") {
+			return nil, err
+		}
+
+		return baseDialer.DialContext(ctx, network, net.JoinHostPort(config.ChatAPIResolvedIP, chatPort))
 	}
 }
 
