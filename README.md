@@ -1,76 +1,92 @@
-# Xiaoxinbao (小馨宝)
+<p align="center">
+  <img src="./public/opencare-logo.png" width="120" alt="OpenCare Logo" />
+</p>
 
-前端和后端现在是彻底分离的两套进程：
+<h1 align="center">OpenCare - 社区病历脱敏工具</h1>
 
-- 前端：Next.js，只负责页面、交互、录音采集和调用后端。
-- 后端：Go，独立提供 `/api/chat`、`/api/stt`、`/api/stt/ws`、`/api/tts`。
+<p align="center">
+  <em>面向 AI 问诊时代的医疗数据隐私保护盾牌 🛡️</em>
+</p>
 
-密钥只允许存在于 Go 后端环境变量中。前端只持有后端地址，不再包含任何第三方服务代理逻辑。
+<p align="center">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-black?style=flat&logo=next.js&logoColor=white">
+  <img alt="Go" src="https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white">
+  <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat&logo=tailwind-css&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat">
+</p>
 
-## 目录结构
+---
 
-- `src/`：前端 UI
-- `backend/`：Go 原生后端
-- `.env.example`：前端环境变量模板
-- `backend/.env.example`：后端环境变量模板
+## 🌟 项目简介
 
-## 前后端分离约束
+OpenCare 是专为社区与医疗场景打造的**病历脱敏工作台**。
 
-- Next.js `src/app/api` 已移除，前端仓库不再提供业务 API。
-- 豆包/阿里云/chat 的密钥只给 Go 后端。
-- 前端通过 `NEXT_PUBLIC_API_BASE_URL` 和 `NEXT_PUBLIC_WS_BASE_URL` 访问后端。
-- 流式语音识别走 Go 后端的 WebSocket，再由 Go 后端代理到豆包。
+随着 AI 大模型在医疗问诊环节的渗透，将未处理的实体病历直接输送给云端大模型面临严重的隐私合规风险。OpenCare 提供了一套开箱即用的前后端分离解决方案，通过多维解析和精准打码，**确保发送给云端 AI 模型的医疗文本剥离所有个人敏感信息 (PII/PHI)**，从而安全合规地在各项 AI 对话流中发挥作用。
 
-## 新增：病历脱敏工作台
+## ✨ 核心特性
 
-当前首页已经切换为“病历脱敏工作台”入口，支持：
+- 🔏 **多元病历脱敏工作台**
+  - **文本直贴**：即时识别并处理敏感关键文本
+  - **图片 OCR 解析**：自动化提取化验单、放射报告等影像文字并进行脱敏
+  - **PDF 深度提取**：通过文本层抓取引擎对数字版 PDF 进行合规处理
+  - **精细化手动干预**：支持前端页面点选文字，灵活增补额外的脱敏规则
+- 🤖 **无缝打通大模型**
+  - 可将脱敏后的安全文本 **一键接驳** 到现有的 AI 对话模型（如 FastGPT 等），避免割裂的工作流。
+  - WebSockets 支持流式语音识别，直接从音频到 AI。
+- 🔒 **极致安全架构**
+  - **密钥不出域**：所有大模型或服务平台（豆包、阿里云等）的 Token 和代理逻辑全权交由 Go 后端管理。前端仅保留交互与展示视图，物理级别杜绝前端 API Key 泄露。
 
-- 文本直贴脱敏
-- 图片 OCR 抽字后脱敏
-- PDF 文本层提取后脱敏
-- 手动选中文字补充脱敏规则
-- 将脱敏后的安全文本直接发送到现有 AI 对话流
+## 🏛️ 项目结构
 
-交付说明见：
+针对系统安全要求，系统采用 **前端UI + 原生Go服务端** 的解耦架构：
 
-- [`MEDICAL_DESENSITIZATION_HANDOFF.md`](./MEDICAL_DESENSITIZATION_HANDOFF.md)
+- **`src/`**：前端层。基于 `Next.js` 构建，纯粹负责页面渲染、操作交互、录音采集与最终效果的呈现。（*注：原 `src/app/api` 已废弃，业务 API 均转交 Go 接管*）。
+- **`backend/`**：独立服务层。基于原生 `Go` (>= 1.25.8) 实现，独立提供安全的数据出口（`/api/chat`、`/api/stt`、`/api/stt/ws`、`/api/tts`）。
 
-## 启动方式
+## 🚀 快速接入
 
-1. 安装前端依赖
-
+### 1️⃣ 安装依赖
+需确保本机已安装 Node 环境以及 **Go >= 1.25.8**。
 ```bash
 npm install
 ```
 
-后端需要 Go 1.25.8 或更高版本；仓库已在 `backend/go.mod` 中锁定该版本，旧版本 Go 在执行 `go run`、`go build`、`go test` 时会继续触发标准库漏洞告警。
+### 2️⃣ 环境变量配置
 
-2. 配置前端环境变量
-
-根目录创建 `.env.local`：
-
+**前端配置（命令行复制）：**
+```bash
+cp .env.example .env.local
+```
+修改 `.env.local` 常用项：
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
-# 可选；不填时默认从 NEXT_PUBLIC_API_BASE_URL 推导
+# 流式 Websockets 地址。不填时将默认从 HTTP API 地址推导
 NEXT_PUBLIC_WS_BASE_URL=
 ```
 
-3. 配置后端环境变量
-
-复制`backend/.env.example` 为 `backend/.env`
-Go backend 启动时会自动读取这个文件；如果你已经在 shell 里显式导出同名环境变量，显式值优先，不会被 `backend/.env` 覆盖。
-
-最小配置通常至少包括：
-
+**后端配置（命令行复制）：**
+```bash
+cp backend/.env.example backend/.env
+```
+Go Backend 启动时自动读取。建议的核心配置如下（支持显式 Shell 覆盖）：
 ```env
 BACKEND_PORT=8080
 CORS_ALLOWED_ORIGINS=http://localhost:3000,https://localhost:3000
 LOG_LEVEL=log
+
+# ----------------------------
+# AI 大模型对话配置参数 (以 FastGPT 为例)
+# ----------------------------
 CHAT_PROVIDER=fastgpt
 CHAT_API_URL=https://your-fastgpt-host/api/v1/chat/completions
 CHAT_API_KEY=fastgpt-app-key
 CHAT_REQUEST_TIMEOUT_MS=300000
+# 设为 false 返回普通 SSE 流，前端自动接管；设为 true 则接手底层流程事件
 FASTGPT_STREAM_DETAIL=false
+
+# ----------------------------
+# 语音识别 (STT) 与 语音合成 (TTS)
+# ----------------------------
 STT_PROVIDER=doubao
 TTS_PROVIDER=doubao
 DOUBAO_STT_APP_ID=...
@@ -79,73 +95,51 @@ DOUBAO_TTS_APP_ID=...
 DOUBAO_TTS_ACCESS_KEY=...
 DOUBAO_TTS_SPEAKER=...
 ```
+*💡 提示：如需定位握手与网络问题，可将 `LOG_LEVEL=debug`，后端将输出详细的 STT WebSocket 数据帧与请求握手细节。*
 
-如果 chat 上游是 FastGPT：
+### 3️⃣ 启动本地环境
 
-- `CHAT_PROVIDER=fastgpt`
-- `CHAT_API_URL` 使用 FastGPT 文档里的 `/api/v1/chat/completions`
-- 前端会自动把当前会话 ID 作为 `chatId` 传给后端，后端再转发给 FastGPT
-- `FASTGPT_STREAM_DETAIL=false` 时，返回的是 OpenAI 风格 SSE，当前前端可直接解析
-- 如果你后续要接 FastGPT 的工作流节点事件，再把 `FASTGPT_STREAM_DETAIL=true`
-- `LOG_LEVEL=log` 只输出常规日志；`LOG_LEVEL=debug` 会额外输出上游握手、SSE/STT WebSocket 细节和请求调试信息
+在两个并行的终端中分别启动前后端：
 
-4. 启动后端
-
+**后端服务 (Go):**
 ```bash
 npm run dev:backend
 ```
+> 默认监听 `http://localhost:8080` (取决于 `BACKEND_PORT`)。前端通过 `chatId`（当前会话 ID）传参由其转发请求。
 
-5. 启动前端
-
+**前端服务 (Next.js):**
 ```bash
 npm run dev
 ```
+> 默认运行于 `http://localhost:3000`。<br>若是需进行本地移动端调试可启动 HTTPS 版本：先执行 `npm run certs`，然后使用 `npm run dev:https`。
 
-如需 HTTPS 前端开发环境：
+## 📦 构建与部署
 
+**语法校验：**
 ```bash
-npm run certs
-npm run dev:https
-```
-
-## 构建
-
-前端构建：
-
-```bash
-npm run build
-```
-
-后端构建：
-
-```bash
-npm run build:backend
-```
-
-前端生产启动：
-
-```bash
-npm start
-```
-
-后端生产启动：
-
-```bash
-go run ./backend/cmd/server
-```
-
-## 校验
-
-前端：
-
-```bash
+# 前端 Lint 与 TS 校验
 npm run lint
 npx tsc --noEmit
-```
 
-后端：
-
-```bash
+# 后端单元测试与编译可用性验证
 npm run test:backend
 cd backend && go build ./cmd/server
 ```
+
+**预生产构建：**
+```bash
+npm run build           # 前端 Web 构建
+npm run build:backend   # 后端二进制文件打包
+```
+
+**服务器环境启动：**
+```bash
+npm start                       # PM2/Node 启动前端服务
+go run ./backend/cmd/server     # 执行后端守卫进程
+```
+
+---
+
+<p align="center">
+  📝 详细的部署流程与接交流程见：<a href="./MEDICAL_DESENSITIZATION_HANDOFF.md">交付说明文档</a>
+</p>
