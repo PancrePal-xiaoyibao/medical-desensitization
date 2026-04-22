@@ -60,8 +60,13 @@ Desktop.ini
 
 # Agent-specific (if any)
 .agent/
+.codex/
+.cursor/
 .gemini/
 .claude/
 .gocache/
 .gomodcache/
 docs/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
