@@ -1,5 +1,5 @@
 {
-  "name": "xiaoxinbao",
+  "name": "medical-desensitization",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,7 +7,7 @@
     "dev:https": "next dev -H 0.0.0.0 --experimental-https --experimental-https-key ./certificates/localhost-key.pem --experimental-https-cert ./certificates/localhost.pem",
     "dev:backend": "cd backend && go run ./cmd/server",
     "build": "next build --webpack",
-    "build:backend": "cd backend && go build -o ./bin/xiaoxinbao-backend ./cmd/server",
+    "build:backend": "cd backend && go build -o ./bin/medical-desensitization-backend ./cmd/server",
     "start": "next start -H 0.0.0.0",
     "test:backend": "cd backend && go test ./...",
     "lint": "eslint",

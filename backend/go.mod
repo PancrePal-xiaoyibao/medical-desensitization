@@ -1,4 +1,4 @@
-module xiaoxinbao/backend
+module medical-desensitization/backend
 
 go 1.25.9
 
