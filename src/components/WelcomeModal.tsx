@@ -30,12 +30,12 @@ export default function WelcomeModal() {
           </div>
 
           <h1 className="text-3xl font-bold text-stone-800 mb-4 text-center tracking-tight">
-            病历脱敏工作台
+            开始使用病历脱敏工作台
           </h1>
           <p className="text-stone-500 mb-8 text-center leading-relaxed font-medium">
-            你好，这里是小胰宝病历脱敏工作台。<br />
-            你可以上传病历、检查报告或直接粘贴文本，<br />
-            先完成脱敏，再把安全版本发送给 AI。
+            这里主要用于处理 PDF 和文本病例资料。<br />
+            在把内容发给 AI 前，先完成敏感信息遮挡，<br />
+            再继续做分析、归档或协作。
           </p>
 
           <div className="bg-stone-50 p-4 rounded-2xl mb-8 border border-stone-100/50">
