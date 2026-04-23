@@ -331,7 +331,7 @@ export default function ChatInterface() {
       try {
         fullText = await sendChatAndStream(text, messages);
       } catch {
-        addMessage("assistant", "抱歉，小馨宝现在有点累了，请稍后再试。");
+        addMessage("assistant", "抱歉，病历脱敏助手暂时不可用，请稍后再试。");
         setVoiceStatus("idle");
         return;
       }
@@ -399,7 +399,7 @@ export default function ChatInterface() {
         speak(fullText);
       }
     } catch {
-      appendTokenToLastMessage("小馨宝现在有点累了，请稍后再试。");
+      appendTokenToLastMessage("病历脱敏助手暂时不可用，请稍后再试。");
     } finally {
       setLoading(false);
       isSendingRef.current = false;
@@ -432,14 +432,14 @@ export default function ChatInterface() {
     if (!currentSession) return;
     const content = messages
       .map(
-        (m) => `### ${m.role === "user" ? "用户" : "小馨宝"}\n${m.content}\n`,
+        (m) => `### ${m.role === "user" ? "用户" : "助手"}\n${m.content}\n`,
       )
       .join("\n---\n\n");
     const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `小馨宝对话录 - ${currentSession.title || "新对话"}.md`;
+    a.download = `病历脱敏会话 - ${currentSession.title || "新对话"}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -472,8 +472,8 @@ export default function ChatInterface() {
             <X size={24} />
           </button>
           <div className="flex flex-col items-center">
-            <span className="text-teal-400 font-bold text-lg">小馨宝</span>
-            <span className="text-xs text-stone-500">语音对话中</span>
+            <span className="text-teal-400 font-bold text-lg">病历脱敏助手</span>
+            <span className="text-xs text-stone-500">语音分析中</span>
           </div>
           <div className="w-12 h-12" />
         </header>
@@ -537,10 +537,10 @@ export default function ChatInterface() {
           </div>
           <div className="space-y-4">
             <h2 className="text-2xl font-medium">
-              {voiceStatus === "idle" && "准备好聊聊了吗？"}
+              {voiceStatus === "idle" && "准备开始语音分析了吗？"}
               {voiceStatus === "recording" && "请讲，我在听..."}
               {voiceStatus === "processing" && "正在思考..."}
-              {voiceStatus === "speaking" && "小馨宝正在回应..."}
+              {voiceStatus === "speaking" && "正在播报分析结果..."}
             </h2>
             {liveTranscript && (
               <p className="max-w-xl text-sm leading-7 text-stone-300">
@@ -604,7 +604,7 @@ export default function ChatInterface() {
               <Menu size={20} />
             </button>
             <h1 className="text-xl font-bold bg-gradient-to-r from-teal-600 to-teal-700 bg-clip-text text-transparent">
-              小馨宝
+              病历脱敏助手
             </h1>
           </div>
           <div className="flex items-center gap-4">
@@ -652,14 +652,14 @@ export default function ChatInterface() {
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-xl font-bold text-stone-800">
-                    在这儿，你可以放心倾诉
+                    这里可以继续基于脱敏结果做分析
                   </h3>
                   <p className="text-stone-500 max-w-xs mx-auto text-sm leading-relaxed">
-                    我是小馨宝。虽然我是一个AI，但我会用心倾听你的每一个故事，陪伴你度过这段时光。
+                    你可以把已经脱敏的资料继续发给助手，补充提问、生成摘要，或者整理后续沟通重点。
                   </p>
                 </div>
                 <div className="flex flex-wrap justify-center gap-3 pt-4">
-                  {["你好呀", "我想找人聊聊天", "有什么建议吗？"].map(
+                  {["请帮我总结这份资料", "请提取重点风险", "请生成后续提问清单"].map(
                     (hint) => (
                       <button
                         key={hint}

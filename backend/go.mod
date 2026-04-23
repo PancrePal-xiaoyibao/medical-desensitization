@@ -1,4 +1,4 @@
-module xiaoxinbao/backend
+module xiaoyibao/backend
 
 go 1.25.9
 

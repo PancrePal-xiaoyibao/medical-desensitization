@@ -212,7 +212,7 @@ export const useChatStore = create<ChatState>()(
       setLoading: (isLoading) => set({ isLoading }),
     }),
     {
-      name: 'xiaoxinbao-storage-v2',
+      name: 'xiaoyibao-storage-v1',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         sessions: state.sessions,

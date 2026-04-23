@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: medical-desensitization
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
