@@ -124,7 +124,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                             用户
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-stone-800 truncate">治愈之旅已开启</p>
+                            <p className="text-sm font-medium text-stone-800 truncate">脱敏工作台已开启</p>
                             <p className="text-[10px] text-stone-400 uppercase tracking-tighter">Anonymous User</p>
                         </div>
                     </div>
