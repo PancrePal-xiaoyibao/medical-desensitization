@@ -30,12 +30,12 @@ export default function WelcomeModal() {
           </div>
 
           <h1 className="text-3xl font-bold text-stone-800 mb-4 text-center tracking-tight">
-            遇见更好的自己
+            病历脱敏工作台
           </h1>
           <p className="text-stone-500 mb-8 text-center leading-relaxed font-medium">
-            你好，我是小馨宝。<br />
-            在这个宁静的角落，你可以放下疲惫，<br />
-            让我倾听你的故事，陪你度过每一刻。
+            你好，这里是小胰宝病历脱敏工作台。<br />
+            你可以上传病历、检查报告或直接粘贴文本，<br />
+            先完成脱敏，再把安全版本发送给 AI。
           </p>
 
           <div className="bg-stone-50 p-4 rounded-2xl mb-8 border border-stone-100/50">
@@ -61,7 +61,7 @@ export default function WelcomeModal() {
             onClick={agreeToTerms}
             className="w-full py-4 bg-teal-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-teal-600/30 text-lg"
           >
-            开启治愈之旅
+            开始使用
           </motion.button>
         </div>
       </motion.div>

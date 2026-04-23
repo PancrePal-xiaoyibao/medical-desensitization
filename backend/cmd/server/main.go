@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"xiaoxinbao/backend/internal/app"
+	"xiaoyibao/backend/internal/app"
 )
 
 func main() {

@@ -380,7 +380,7 @@ export default function Home() {
 
       await parseSSEStream(reader, appendTokenToLastMessage);
     } catch {
-      appendTokenToLastMessage('抱歉，小馨宝暂时没能完成这次分析，请稍后再试。');
+      appendTokenToLastMessage('抱歉，小胰宝暂时没能完成这次分析，请稍后再试。');
     } finally {
       setLoading(false);
     }
