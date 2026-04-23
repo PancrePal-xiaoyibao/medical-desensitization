@@ -17,6 +17,36 @@ export type ChatSession = {
   updatedAt: number;
 };
 
+const STORAGE_KEY = 'xiaoyibao-storage-v2';
+const LEGACY_STORAGE_KEY = ['xiao', 'xinbao-storage-v2'].join('');
+
+const persistentStorage = createJSONStorage(() => ({
+  getItem: (name: string) => {
+    const currentValue = localStorage.getItem(name);
+    if (currentValue !== null) {
+      return currentValue;
+    }
+
+    if (name === STORAGE_KEY) {
+      return localStorage.getItem(LEGACY_STORAGE_KEY);
+    }
+
+    return null;
+  },
+  setItem: (name: string, value: string) => {
+    localStorage.setItem(name, value);
+    if (name === STORAGE_KEY) {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+  },
+  removeItem: (name: string) => {
+    localStorage.removeItem(name);
+    if (name === STORAGE_KEY) {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+  },
+}));
+
 interface ChatState {
   sessions: ChatSession[];
   activeSessionId: string | null;
@@ -212,8 +242,8 @@ export const useChatStore = create<ChatState>()(
       setLoading: (isLoading) => set({ isLoading }),
     }),
     {
-      name: 'xiaoyibao-storage-v1',
-      storage: createJSONStorage(() => localStorage),
+      name: STORAGE_KEY,
+      storage: persistentStorage,
       partialize: (state) => ({
         sessions: state.sessions,
         activeSessionId: state.activeSessionId,
