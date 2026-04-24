@@ -115,7 +115,7 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [text, setText] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [result, setResult] = useState<RedactionResponse | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -208,12 +208,12 @@ export default function Home() {
     setError('');
 
     try {
-      const hasFile = Boolean(selectedFile);
+      const hasFile = selectedFiles.length === 1;
       const response = await fetch(getApiURL('/api/desensitize'), {
         method: 'POST',
         headers: hasFile ? undefined : { 'Content-Type': 'application/json' },
         body: hasFile
-          ? createFormPayload(text, selectedFile, manualRules)
+          ? createFormPayload(text, selectedFiles, manualRules)
           : JSON.stringify({ text, manualRules: serializeManualRules(manualRules) }),
       });
 
@@ -234,11 +234,11 @@ export default function Home() {
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] || null;
-    setSelectedFile(file);
+    const files = Array.from(event.target.files ?? []);
+    setSelectedFiles(files);
     setResult(null);
 
-    if (!file) {
+    if (files.length === 0) {
       setExtractStatus('idle');
       setExtractMessage('');
       return;
@@ -249,17 +249,49 @@ export default function Home() {
     setError('');
 
     try {
-      const extractedText = await extractTextFromFile(file, (message) => {
-        setExtractMessage(message);
-      });
+      const extractedParts: string[] = [];
+      const failedFiles: string[] = [];
 
-      if (!extractedText.trim()) {
-        throw new Error('这个文件里暂时没有读出文字。你可以换一张更清楚的图片，或者把文字直接粘贴进来。');
+      for (const [index, file] of files.entries()) {
+        try {
+          const extractedText = await extractTextFromFile(file, (message) => {
+            const prefix =
+              files.length > 1 ? `正在读取第 ${index + 1}/${files.length} 个文件 ${file.name}：` : '';
+            setExtractMessage(`${prefix}${message}`);
+          });
+
+          const trimmedText = extractedText.trim();
+          if (!trimmedText) {
+            failedFiles.push(`${file.name}：没有读出文字`);
+            continue;
+          }
+
+          extractedParts.push(
+            files.length > 1 ? `### 文件 ${index + 1}：${file.name}\n${trimmedText}` : trimmedText
+          );
+        } catch (extractError) {
+          failedFiles.push(
+            `${file.name}：${
+              extractError instanceof Error ? extractError.message : '文件读取失败，请换一个文件再试。'
+            }`
+          );
+        }
       }
 
-      setText(extractedText.trim());
+      if (extractedParts.length === 0) {
+        throw new Error(
+          failedFiles[0] || '这些文件里暂时没有读出文字。你可以换更清楚的文件，或者把文字直接粘贴进来。'
+        );
+      }
+
+      setText(extractedParts.join('\n\n'));
       setExtractStatus('done');
-      setExtractMessage(`已经从 ${file.name} 读出文字，你可以先检查一下，再继续处理。`);
+      setExtractMessage(
+        files.length > 1
+          ? `已经读出 ${extractedParts.length}/${files.length} 个文件的内容，并合并到同一个文本框里，可以直接复用同一套脱敏规则。`
+          : `已经从 ${files[0].name} 读出文字，你可以先检查一下，再继续处理。`
+      );
+      setError(failedFiles.length > 0 ? failedFiles.join('；') : '');
     } catch (extractError) {
       setExtractStatus('error');
       setExtractMessage(
@@ -272,7 +304,7 @@ export default function Home() {
 
   function handleReset() {
     setText('');
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setResult(null);
     setError('');
     setManualRules([]);
@@ -344,6 +376,21 @@ export default function Home() {
     await navigator.clipboard.writeText(content);
     setCopied(type);
     window.setTimeout(() => setCopied(null), 1600);
+  }
+
+  function handleExportMarkdown() {
+    if (!result) {
+      return;
+    }
+
+    const markdown = buildExportMarkdown(result, selectedFiles, stats);
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = buildExportFileName(selectedFiles);
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function sendToAssistant(message: string) {
@@ -427,8 +474,8 @@ export default function Home() {
               <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-stone-900 sm:text-5xl">
                 把病历里的个人信息遮掉后，再发给 AI。
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600 sm:text-base">
-                你可以上传图片、PDF，或者直接粘贴文字。我们会先帮你找出姓名、手机号、身份证号这些个人信息，再给你一份更安全的内容。
+                  <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600 sm:text-base">
+                你可以上传图片、PDF，或者直接粘贴文字。现在也支持一次上传多份连续病例，合并后复用同一套脱敏规则，再批量导出整理结果。
               </p>
             </div>
 
@@ -463,7 +510,7 @@ export default function Home() {
                 <div>
                   <p className="text-lg font-semibold text-stone-900">1. 先把内容放进来</p>
                   <p className="mt-1 text-sm text-stone-500">
-                    可以直接粘贴文字，也可以上传图片、PDF 或文本文件。
+                    可以直接粘贴文字，也可以上传一份或多份图片、PDF、文本文件。
                   </p>
                 </div>
                 <button
@@ -483,11 +530,27 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-stone-900">上传资料</p>
                     <p className="mt-1 text-sm leading-6 text-stone-500">
-                      如果你上传的是图片，我们会尽量把图里的字读出来；如果是 PDF 或文本文件，也会尽量帮你读出内容。
+                      如果你上传的是图片，我们会尽量把图里的字读出来；如果是 PDF 或文本文件，也会尽量帮你读出内容。多份文件会自动合并到下面的文本框里，方便统一脱敏。
                     </p>
                     <p className="mt-3 text-sm text-stone-700">
-                      {selectedFile ? `当前文件：${selectedFile.name}` : '点这里选择文件'}
+                      {selectedFiles.length === 0
+                        ? '点这里选择文件'
+                        : selectedFiles.length === 1
+                          ? `当前文件：${selectedFiles[0].name}`
+                          : `当前已选择 ${selectedFiles.length} 个文件`}
                     </p>
+                    {selectedFiles.length > 1 && (
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
+                        {selectedFiles.map((file) => (
+                          <span
+                            key={`${file.name}-${file.size}`}
+                            className="rounded-full bg-white px-2.5 py-1"
+                          >
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <input
@@ -496,6 +559,7 @@ export default function Home() {
                   onChange={handleFileChange}
                   className="sr-only"
                   accept=".txt,.md,.json,.csv,.pdf,image/*"
+                  multiple
                 />
               </label>
 
@@ -895,7 +959,10 @@ export default function Home() {
                     },
                     {
                       label: '这份内容来自',
-                      value: result.fileName || result.sourceType,
+                      value:
+                        selectedFiles.length > 1
+                          ? `${selectedFiles.length} 个文件`
+                          : result.fileName || result.sourceType,
                     },
                   ].map((item) => (
                     <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -959,6 +1026,24 @@ export default function Home() {
                   copied={copied === 'redacted'}
                   onCopy={() => void handleCopy(result.redactedText, 'redacted')}
                 />
+
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-white">批量导出</div>
+                      <p className="mt-1 text-sm leading-6 text-stone-400">
+                        当前结果可以导出成 Markdown。批量上传时，会把每份文件和合并后的脱敏结果一起整理出来。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleExportMarkdown}
+                      className="rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-stone-100 transition hover:border-white/30 hover:bg-white/5"
+                    >
+                      导出 Markdown
+                    </button>
+                  </div>
+                </div>
 
                 <div className="rounded-[24px] border border-teal-400/20 bg-teal-400/10 p-4">
                   <div className="flex items-center gap-2 text-sm text-teal-100">
@@ -1057,10 +1142,10 @@ export default function Home() {
   );
 }
 
-function createFormPayload(text: string, file: File | null, manualRules: ManualRule[]) {
+function createFormPayload(text: string, files: File[], manualRules: ManualRule[]) {
   const formData = new FormData();
-  if (file) {
-    formData.append('file', file);
+  if (files.length === 1) {
+    formData.append('file', files[0]);
   }
   if (text.trim()) {
     formData.append('text', text);
@@ -1207,6 +1292,59 @@ function isNoiseFragment(value: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildExportMarkdown(
+  result: RedactionResponse,
+  files: File[],
+  stats: Array<{ label: string; count: number }>
+) {
+  const sourceSummary =
+    files.length === 0
+      ? '直接粘贴文本'
+      : files.length === 1
+        ? files[0].name
+        : `${files.length} 个文件：${files.map((file) => file.name).join('、')}`;
+  const statsSummary =
+    stats.length > 0 ? stats.map((item) => `${item.label} x ${item.count}`).join('，') : '无';
+
+  return [
+    '# 病历脱敏导出',
+    '',
+    `- 导出时间：${new Date().toLocaleString('zh-CN')}`,
+    `- 来源：${sourceSummary}`,
+    `- 共脱敏：${result.summary.total} 处`,
+    `- 分类统计：${statsSummary}`,
+    '',
+    '## 原始内容',
+    '',
+    result.originalText,
+    '',
+    '## 脱敏后内容',
+    '',
+    result.redactedText,
+    '',
+    '## 明细',
+    '',
+    ...(result.items.length > 0
+      ? result.items.map(
+          (item) => `- ${item.label}｜${item.original} -> ${item.masked}｜置信度：${item.confidence}`
+        )
+      : ['- 无']),
+    '',
+  ].join('\n');
+}
+
+function buildExportFileName(files: File[]) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (files.length === 1) {
+    return `${stripExtension(files[0].name)}-脱敏结果-${stamp}.md`;
+  }
+  return `病历脱敏批量导出-${stamp}.md`;
+}
+
+function stripExtension(value: string) {
+  return value.replace(/\.[^.]+$/, '');
 }
 
 async function extractTextFromFile(

@@ -34,6 +34,7 @@ export default function WelcomeModal() {
           </h1>
           <p className="text-stone-500 mb-8 text-center leading-relaxed font-medium">
             这里主要用于处理 PDF 和文本病例资料。<br />
+            现在也支持连续病例批量上传与 Markdown 导出。<br />
             在把内容发给 AI 前，先完成敏感信息遮挡，<br />
             再继续做分析、归档或协作。
           </p>
