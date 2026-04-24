@@ -208,8 +208,9 @@ export default function Home() {
     setError('');
 
     try {
+      const apiURL = getApiURL('/api/desensitize');
       const hasFile = selectedFiles.length === 1;
-      const response = await fetch(getApiURL('/api/desensitize'), {
+      const response = await fetch(apiURL, {
         method: 'POST',
         headers: hasFile ? undefined : { 'Content-Type': 'application/json' },
         body: hasFile
@@ -225,9 +226,7 @@ export default function Home() {
       setResult(payload as RedactionResponse);
     } catch (submitError) {
       setResult(null);
-      setError(
-        submitError instanceof Error ? submitError.message : '处理没有成功，请稍后再试。'
-      );
+      setError(resolveSubmitErrorMessage(submitError, getApiURL('/api/desensitize')));
     } finally {
       setIsSubmitting(false);
     }
@@ -1345,6 +1344,37 @@ function buildExportFileName(files: File[]) {
 
 function stripExtension(value: string) {
   return value.replace(/\.[^.]+$/, '');
+}
+
+function resolveSubmitErrorMessage(error: unknown, apiURL: string) {
+  if (!(error instanceof Error)) {
+    return '处理没有成功，请稍后再试。';
+  }
+
+  const message = error.message.trim();
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage === 'load failed' || lowerMessage === 'failed to fetch') {
+    if (typeof window !== 'undefined') {
+      const pageProtocol = window.location.protocol;
+      const targetProtocol = safeReadProtocol(apiURL);
+      if (pageProtocol === 'https:' && targetProtocol === 'http:') {
+        return '当前页面是 HTTPS，但后端接口配置的是 HTTP，浏览器会拦截这个请求。请把前端改用 HTTP 打开，或者把后端也换成 HTTPS。';
+      }
+    }
+
+    return `现在连不上脱敏服务（${apiURL}）。请先确认后端已经启动，并且接口地址填写正确。`;
+  }
+
+  return message || '处理没有成功，请稍后再试。';
+}
+
+function safeReadProtocol(value: string) {
+  try {
+    return new URL(value).protocol;
+  } catch {
+    return '';
+  }
 }
 
 async function extractTextFromFile(

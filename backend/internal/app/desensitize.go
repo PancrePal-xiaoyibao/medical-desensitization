@@ -170,10 +170,6 @@ func parseDesensitizeInput(r *http.Request) (string, string, string, []manualRul
 
 		if text != "" {
 			warnings := []string{"已优先使用你粘贴的文本内容；上传文件仅作为来源记录。"}
-			if isUnsupportedMedicalUpload(fileName, mimeType) {
-				warnings = append(warnings, "图片和 PDF 的自动抽取将在下一阶段接入 OCR；当前请先粘贴识别后的文字。")
-				return "mixed", fileName, text, manualRules, warnings, true, nil
-			}
 			return "mixed", fileName, text, manualRules, warnings, false, nil
 		}
 
