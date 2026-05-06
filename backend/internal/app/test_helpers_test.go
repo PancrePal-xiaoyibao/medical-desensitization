@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,15 @@ import (
 )
 
 func testConfig() Config {
+	dataDir, err := os.MkdirTemp("", "xiaoyibao-test-data-*")
+	if err != nil {
+		panic(err)
+	}
+
 	return Config{
 		Port:                       "0",
 		CORSAllowedOrigins:         []string{"http://frontend.test"},
+		DataDir:                    dataDir,
 		MaxDesensitizeBodyBytes:    defaultMaxDesensitizeBodyBytes,
 		MaxDesensitizeFileBytes:    defaultMaxDesensitizeFileBytes,
 		ChatProvider:               "openai",

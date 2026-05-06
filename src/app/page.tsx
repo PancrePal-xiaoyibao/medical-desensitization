@@ -15,18 +15,32 @@ import {
   ClipboardCheck,
   Copy,
   FileSearch,
+  KeyRound,
   Loader2,
+  LogOut,
   MessageSquareText,
   ScanSearch,
   Shield,
   Sparkles,
   Upload,
+  UserRound,
   WandSparkles,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import React from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { getApiURL } from '@/lib/client/api';
+import {
+  type AuthUser,
+  clearAuthToken,
+  fetchCurrentUser,
+  fetchHistory,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
+  saveHistory,
+  setAuthToken,
+} from '@/lib/client/auth';
 import { cn } from '@/lib/utils';
 import { parseSSEStream } from '@/lib/sse';
 
@@ -131,9 +145,15 @@ export default function Home() {
   const [assistantPrompt, setAssistantPrompt] = useState(
     '请帮我看看这份资料里需要重点注意什么，还需要补充哪些信息。'
   );
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'guest'>('checking');
+  const [historyReady, setHistoryReady] = useState(false);
   const aiChatEnabled = process.env.NEXT_PUBLIC_AI_CHAT_ENABLED === 'true';
 
   const initUser = useChatStore((state) => state.initUser);
+  const setAuthenticatedUser = useChatStore((state) => state.setAuthenticatedUser);
+  const setSessionsSnapshot = useChatStore((state) => state.setSessionsSnapshot);
+  const resetForLogout = useChatStore((state) => state.resetForLogout);
   const sessions = useChatStore((state) => state.sessions);
   const activeSessionId = useChatStore((state) => state.activeSessionId);
   const addMessage = useChatStore((state) => state.addMessage);
@@ -158,6 +178,54 @@ export default function Home() {
       unsubscribe();
     };
   }, [initUser]);
+
+  useEffect(() => {
+    if (!useChatStore.persist.hasHydrated()) {
+      return;
+    }
+
+    let canceled = false;
+    async function restoreAuth() {
+      try {
+        const user = await fetchCurrentUser();
+        const history = await fetchHistory();
+        if (canceled) {
+          return;
+        }
+        setAuthUser(user);
+        setAuthenticatedUser(user.id);
+        setSessionsSnapshot(history.sessions, history.activeSessionId);
+        setAuthStatus('authenticated');
+        setHistoryReady(true);
+      } catch {
+        if (canceled) {
+          return;
+        }
+        clearAuthToken();
+        resetForLogout();
+        setAuthStatus('guest');
+        setHistoryReady(false);
+      }
+    }
+
+    void restoreAuth();
+
+    return () => {
+      canceled = true;
+    };
+  }, [resetForLogout, setAuthenticatedUser, setSessionsSnapshot]);
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !historyReady) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void saveHistory({ sessions, activeSessionId }).catch(() => undefined);
+    }, 500);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeSessionId, authStatus, historyReady, sessions]);
 
   const currentSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
@@ -455,6 +523,41 @@ export default function Home() {
     await sendToAssistant(assistantPrompt.trim());
   }
 
+  async function handleAuthenticated(response: { token: string; user: AuthUser }) {
+    setAuthToken(response.token);
+    setAuthUser(response.user);
+    setAuthenticatedUser(response.user.id);
+    const history = await fetchHistory();
+    setSessionsSnapshot(history.sessions, history.activeSessionId);
+    setAuthStatus('authenticated');
+    setHistoryReady(true);
+  }
+
+  async function handleLogout() {
+    await saveHistory({ sessions, activeSessionId }).catch(() => undefined);
+    await logoutAccount();
+    clearAuthToken();
+    setAuthUser(null);
+    setAuthStatus('guest');
+    setHistoryReady(false);
+    resetForLogout();
+  }
+
+  if (authStatus === 'checking') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-stone-950 text-white">
+        <div className="flex items-center gap-3 text-sm text-stone-300">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          正在检查登录状态
+        </div>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return <AuthScreen onAuthenticated={(response) => void handleAuthenticated(response)} />;
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.18),_transparent_26%),linear-gradient(180deg,_#fcfbf5_0%,_#f4efe2_100%)] text-stone-900">
       <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -479,6 +582,25 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="col-span-2 rounded-2xl border border-teal-100 bg-teal-50/80 px-4 py-3 sm:col-span-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-teal-950">
+                      {authUser.displayName || authUser.username}
+                    </p>
+                    <p className="mt-1 text-xs text-teal-700">历史记录会保存到这个账号</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleLogout()}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-teal-200 bg-white text-teal-800 transition hover:border-teal-700"
+                    aria-label="退出登录"
+                    title="退出登录"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
               {[
                 ['上传图片', '帮你读出文字'],
                 ['上传 PDF', '尽量读出内容'],
@@ -1438,6 +1560,154 @@ async function extractImageText(file: File, onStatus: (message: string) => void)
   } finally {
     await worker.terminate();
   }
+}
+
+function AuthScreen({
+  onAuthenticated,
+}: {
+  onAuthenticated: (response: { token: string; user: AuthUser }) => void;
+}) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      const response =
+        mode === 'register'
+          ? await registerAccount({ username, displayName, password })
+          : await loginAccount({ username, password });
+      onAuthenticated(response);
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : '登录失败，请稍后再试');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-[linear-gradient(180deg,_#fcfbf5_0%,_#f1eadb_100%)] px-4 py-8 text-stone-900">
+      <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-5xl items-center">
+        <div className="grid w-full overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-[0_24px_90px_rgba(68,64,60,0.12)] lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="bg-stone-950 p-8 text-white sm:p-10">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm text-teal-100">
+              <Shield className="h-4 w-4" />
+              登录后查看自己的历史记录
+            </div>
+            <h1 className="mt-6 max-w-md text-3xl font-semibold tracking-tight sm:text-4xl">
+              病历脱敏工作台
+            </h1>
+            <p className="mt-4 max-w-md text-sm leading-7 text-stone-300">
+              账号用于区分不同用户，并让你在不同浏览器登录后继续查看自己的 AI 对话历史。后台不保存上传文件原件，也不保存未脱敏病历原文。
+            </p>
+            <div className="mt-8 space-y-3 text-sm text-stone-300">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                账号密码只用于登录，密码以哈希形式保存。
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                历史记录保存的是你主动发给 AI 的对话内容；请先脱敏再发送。
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                真实患者资料上线前仍需确认日志、访问权限和数据保留规则。
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 sm:p-10">
+            <div className="mb-6 inline-flex rounded-full border border-stone-200 bg-stone-50 p-1">
+              {[
+                ['login', '登录'],
+                ['register', '注册'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setMode(value as 'login' | 'register');
+                    setError('');
+                  }}
+                  className={cn(
+                    'rounded-full px-4 py-2 text-sm font-medium transition',
+                    mode === value ? 'bg-stone-900 text-white' : 'text-stone-600 hover:text-stone-900'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-stone-700">用户名</label>
+                <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 focus-within:border-teal-700 focus-within:bg-white">
+                  <UserRound className="h-5 w-5 text-stone-400" />
+                  <input
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="手机号、邮箱或用户名"
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-stone-400"
+                    autoComplete="username"
+                    required
+                  />
+                </div>
+              </div>
+
+              {mode === 'register' && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-stone-700">显示名</label>
+                  <input
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder="例如：小胰宝运营"
+                    className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm outline-none transition placeholder:text-stone-400 focus:border-teal-700 focus:bg-white"
+                    autoComplete="name"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-stone-700">密码</label>
+                <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 focus-within:border-teal-700 focus-within:bg-white">
+                  <KeyRound className="h-5 w-5 text-stone-400" />
+                  <input
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder={mode === 'register' ? '至少 8 位' : '输入密码'}
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-stone-400"
+                    type="password"
+                    autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                    required
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-teal-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-stone-400"
+              >
+                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {mode === 'register' ? '注册并进入' : '登录'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function ResultBlock({

@@ -128,6 +128,7 @@ Go backend 启动时会自动读取这个文件；如果你已经在 shell 里�
 ```env
 BACKEND_PORT=8080
 CORS_ALLOWED_ORIGINS=http://localhost:3000,https://localhost:3000
+DATA_DIR=backend/data
 LOG_LEVEL=log
 MAX_DESENSITIZE_BODY_BYTES=10485760
 MAX_DESENSITIZE_FILE_BYTES=20971520
@@ -229,6 +230,12 @@ CORS_ALLOWED_ORIGINS=https://你的服务名.onrender.com
 ```env
 MAX_DESENSITIZE_FILE_BYTES=20971520
 NGINX_CLIENT_MAX_BODY_SIZE=20m
+```
+
+如果要让注册账号和历史记录在公网部署后长期保留，需要给 `DATA_DIR` 配持久化存储。Render 上建议挂载持久磁盘，并设置：
+
+```env
+DATA_DIR=/var/data
 ```
 
 如果只做病历脱敏演示，默认配置就可以先跑起来；如果要启用 AI 对话、语音识别、语音播报，再去补充对应环境变量即可。

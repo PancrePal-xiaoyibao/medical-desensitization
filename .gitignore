@@ -20,6 +20,7 @@
 /build
 /backend/bin
 /backend/server
+/backend/data
 
 # misc
 .DS_Store

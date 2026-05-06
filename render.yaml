@@ -8,6 +8,8 @@ services:
     envVars:
       - key: LOG_LEVEL
         value: log
+      - key: DATA_DIR
+        value: /var/data
       - key: MAX_DESENSITIZE_BODY_BYTES
         value: 10485760
       - key: MAX_DESENSITIZE_FILE_BYTES
