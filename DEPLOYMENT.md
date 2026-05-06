@@ -16,6 +16,14 @@ Before deploying from `main`, enable the `main` branch ruleset described in [`.g
 
 The service exposes one public URL. Nginx serves the frontend and proxies `/api/*`, `/api/stt/ws`, and `/healthz` to the Go backend.
 
+For normal login and cross-browser history, configure persistent storage for `DATA_DIR`. On Render, attach a persistent disk and set:
+
+```env
+DATA_DIR=/var/data
+```
+
+Without persistent storage, accounts and history can be lost when the service is rebuilt or moved.
+
 ## 3. Required environment variables
 
 The safe defaults in `render.yaml` are enough for text desensitization demos:

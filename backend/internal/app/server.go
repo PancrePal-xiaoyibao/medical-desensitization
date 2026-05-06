@@ -17,6 +17,7 @@ type Server struct {
 	config     Config
 	httpClient *http.Client
 	upgrader   websocket.Upgrader
+	authStore  *authStore
 }
 
 func NewServer(config Config) *Server {
@@ -33,6 +34,7 @@ func NewServer(config Config) *Server {
 			Timeout:   0,
 			Transport: transport,
 		},
+		authStore: newAuthStore(config.DataDir),
 		upgrader: websocket.Upgrader{
 			EnableCompression: false,
 			CheckOrigin: func(r *http.Request) bool {
@@ -84,6 +86,11 @@ func configureChatDialFallback(transport *http.Transport, config Config) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.withLogging("healthz", s.handleHealthz))
+	mux.HandleFunc("/api/auth/register", s.withLogging("auth.register", s.withCORS(s.handleAuthRegister)))
+	mux.HandleFunc("/api/auth/login", s.withLogging("auth.login", s.withCORS(s.handleAuthLogin)))
+	mux.HandleFunc("/api/auth/logout", s.withLogging("auth.logout", s.withCORS(s.handleAuthLogout)))
+	mux.HandleFunc("/api/auth/me", s.withLogging("auth.me", s.withCORS(s.handleAuthMe)))
+	mux.HandleFunc("/api/history", s.withLogging("history", s.withCORS(s.handleHistory)))
 	mux.HandleFunc("/api/chat", s.withLogging("chat", s.withCORS(s.handleChat)))
 	mux.HandleFunc("/api/desensitize", s.withLogging("desensitize", s.withCORS(s.handleDesensitize)))
 	mux.HandleFunc("/api/tts", s.withLogging("tts", s.withCORS(s.handleTTS)))

@@ -56,6 +56,9 @@ interface ChatState {
 
   agreeToTerms: () => void;
   initUser: () => void;
+  setAuthenticatedUser: (userId: string) => void;
+  setSessionsSnapshot: (sessions: ChatSession[], activeSessionId: string | null) => void;
+  resetForLogout: () => void;
 
   // Session Actions
   createNewSession: () => string;
@@ -80,6 +83,37 @@ export const useChatStore = create<ChatState>()(
       isLoading: false,
 
       agreeToTerms: () => set({ hasAgreed: true }),
+
+      setAuthenticatedUser: (userId) => set({ userId, hasAgreed: true }),
+
+      setSessionsSnapshot: (sessions, activeSessionId) => {
+        if (sessions.length === 0) {
+          const id = generateUUID();
+          const newSession: ChatSession = {
+            id,
+            title: '新对话',
+            messages: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          set({ sessions: [newSession], activeSessionId: newSession.id });
+          return;
+        }
+
+        const nextActiveSessionId =
+          activeSessionId && sessions.some((session) => session.id === activeSessionId)
+            ? activeSessionId
+            : sessions[0].id;
+        set({ sessions, activeSessionId: nextActiveSessionId });
+      },
+
+      resetForLogout: () => set({
+        sessions: [],
+        activeSessionId: null,
+        hasAgreed: false,
+        userId: null,
+        isLoading: false,
+      }),
 
       initUser: () => {
         const { userId, sessions, activeSessionId } = get();

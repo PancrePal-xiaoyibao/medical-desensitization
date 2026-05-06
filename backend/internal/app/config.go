@@ -11,6 +11,7 @@ type Config struct {
 	Port string
 
 	CORSAllowedOrigins      []string
+	DataDir                 string
 	MaxDesensitizeBodyBytes int64
 	MaxDesensitizeFileBytes int64
 
@@ -60,6 +61,7 @@ func LoadConfig() Config {
 	return Config{
 		Port:                       getenv("BACKEND_PORT", "8080"),
 		CORSAllowedOrigins:         parseOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		DataDir:                    getenv("DATA_DIR", "backend/data"),
 		MaxDesensitizeBodyBytes:    int64(parsePositiveInt(os.Getenv("MAX_DESENSITIZE_BODY_BYTES"), 10<<20)),
 		MaxDesensitizeFileBytes:    int64(parsePositiveInt(os.Getenv("MAX_DESENSITIZE_FILE_BYTES"), 20<<20)),
 		LogLevel:                   normalizeLogLevel(os.Getenv("LOG_LEVEL")),
