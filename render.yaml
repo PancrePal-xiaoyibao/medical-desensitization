@@ -5,3 +5,14 @@ services:
     plan: free
     healthCheckPath: /healthz
     autoDeploy: true
+    envVars:
+      - key: LOG_LEVEL
+        value: log
+      - key: MAX_DESENSITIZE_BODY_BYTES
+        value: 10485760
+      - key: MAX_DESENSITIZE_FILE_BYTES
+        value: 20971520
+      - key: NGINX_CLIENT_MAX_BODY_SIZE
+        value: 20m
+      - key: NEXT_PUBLIC_AI_CHAT_ENABLED
+        value: false
