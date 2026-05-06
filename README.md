@@ -208,6 +208,7 @@ go run ./backend/cmd/server
 - `Dockerfile`：同时构建 Next.js 前端和 Go 后端
 - `render.yaml`：可直接导入 Render Blueprint
 - 容器内通过 Nginx 暴露单一公网入口
+- 公网部署检查清单见 [`DEPLOYMENT.md`](./DEPLOYMENT.md)
 
 这套部署方式的特点：
 
@@ -216,6 +217,19 @@ go run ./backend/cmd/server
 - 浏览器直接访问同域名，不需要额外处理跨域
 
 在 Render 中部署时，直接导入本仓库即可。服务启动后会得到一个类似 `https://xxx.onrender.com` 的公网地址。
+
+拿到 Render 公网地址后，建议在 Render 环境变量里设置：
+
+```env
+CORS_ALLOWED_ORIGINS=https://你的服务名.onrender.com
+```
+
+如果要调整上传大小，需要同时保持后端和 Nginx 限制一致，例如：
+
+```env
+MAX_DESENSITIZE_FILE_BYTES=20971520
+NGINX_CLIENT_MAX_BODY_SIZE=20m
+```
 
 如果只做病历脱敏演示，默认配置就可以先跑起来；如果要启用 AI 对话、语音识别、语音播报，再去补充对应环境变量即可。
 
