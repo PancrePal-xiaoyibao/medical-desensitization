@@ -143,7 +143,7 @@ export default function Home() {
   );
   const [extractMessage, setExtractMessage] = useState('');
   const [assistantPrompt, setAssistantPrompt] = useState(
-    '请帮我看看这份资料里需要重点注意什么，还需要补充哪些信息。'
+    '请总结重点，并列出后续需要确认的问题。'
   );
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'guest'>('checking');
@@ -252,23 +252,23 @@ export default function Home() {
   );
   const aiSendHint = useMemo(() => {
     if (!aiChatEnabled) {
-      return '这台演示环境还没有连上 AI 服务，所以现在还不能发送。';
+      return 'AI 服务未启用';
     }
 
     if (isChatLoading) {
-      return 'AI 正在阅读刚才发过去的内容，请稍等一下。';
+      return 'AI 正在处理';
     }
 
     if (!result?.redactedText) {
-      return '要先点上面的“开始处理”，等页面出现“处理后的内容”以后，这里才能发送。';
+      return '请先完成脱敏';
     }
 
-    return '现在可以把处理后的内容发给 AI 了。';
+    return '可发送';
   }, [aiChatEnabled, isChatLoading, result?.redactedText]);
 
   async function handleSubmit() {
     if (!text.trim()) {
-      setError('请先粘贴文字，或者上传一张图片、一个 PDF、一个文本文件。');
+      setError('请输入内容或上传文件');
       return;
     }
 
@@ -347,7 +347,7 @@ export default function Home() {
 
       if (extractedParts.length === 0) {
         throw new Error(
-          failedFiles[0] || '这些文件里暂时没有读出文字。你可以换更清楚的文件，或者把文字直接粘贴进来。'
+          failedFiles[0] || '未读取到文字'
         );
       }
 
@@ -355,8 +355,8 @@ export default function Home() {
       setExtractStatus('done');
       setExtractMessage(
         files.length > 1
-          ? `已经读出 ${extractedParts.length}/${files.length} 个文件的内容，并合并到同一个文本框里，可以直接复用同一套脱敏规则。`
-          : `已经从 ${files[0].name} 读出文字，你可以先检查一下，再继续处理。`
+          ? `已读取 ${extractedParts.length}/${files.length} 个文件`
+          : `已读取 ${files[0].name}`
       );
       setError(failedFiles.length > 0 ? failedFiles.join('；') : '');
     } catch (extractError) {
@@ -437,8 +437,8 @@ export default function Home() {
 
     const content =
       type === 'share_ai'
-        ? `${assistantPrompt.trim() || '请帮我看看这份资料里需要重点注意什么。'}\n\n以下是已经遮掉个人信息的内容：\n${result.redactedText}`
-        : `这是已经遮掉个人信息后的内容，你可以直接看：\n\n${result.redactedText}`;
+        ? `${assistantPrompt.trim() || '请总结重点。'}\n\n已脱敏内容：\n${result.redactedText}`
+        : `已脱敏内容：\n\n${result.redactedText}`;
 
     await navigator.clipboard.writeText(content);
     setCopied(type);
@@ -494,7 +494,7 @@ export default function Home() {
 
       await parseSSEStream(reader, appendTokenToLastMessage);
     } catch {
-      appendTokenToLastMessage('抱歉，病历脱敏助手暂时没能完成这次分析，请稍后再试。');
+      appendTokenToLastMessage('请求失败，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -571,14 +571,11 @@ export default function Home() {
             <div className="max-w-3xl">
               <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-sm font-medium text-teal-800">
                 <Shield className="h-4 w-4" />
-                发给 AI 前，先保护隐私
+                隐私脱敏
               </div>
               <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-stone-900 sm:text-5xl">
-                把病历里的个人信息遮掉后，再发给 AI。
+                病历脱敏工作台
               </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600 sm:text-base">
-                你可以上传图片、PDF，或者直接粘贴文字。现在也支持一次上传多份连续病例，合并后复用同一套脱敏规则，再批量导出整理结果。
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -588,7 +585,7 @@ export default function Home() {
                     <p className="truncate text-sm font-semibold text-teal-950">
                       {authUser.displayName || authUser.username}
                     </p>
-                    <p className="mt-1 text-xs text-teal-700">历史记录会保存到这个账号</p>
+                    <p className="mt-1 text-xs text-teal-700">已登录</p>
                   </div>
                   <button
                     type="button"
@@ -602,10 +599,10 @@ export default function Home() {
                 </div>
               </div>
               {[
-                ['上传图片', '帮你读出文字'],
-                ['上传 PDF', '尽量读出内容'],
-                ['手动标记', '把漏掉的信息补上'],
-                ['再发给 AI', '更安心一些'],
+                ['图片', 'OCR'],
+                ['PDF', '文本提取'],
+                ['手动标记', '补充规则'],
+                ['AI', '脱敏后发送'],
               ].map(([title, sub]) => (
                 <div
                   key={title}
@@ -629,10 +626,7 @@ export default function Home() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-lg font-semibold text-stone-900">1. 先把内容放进来</p>
-                  <p className="mt-1 text-sm text-stone-500">
-                    可以直接粘贴文字，也可以上传一份或多份图片、PDF、文本文件。
-                  </p>
+                  <p className="text-lg font-semibold text-stone-900">资料</p>
                 </div>
                 <button
                   type="button"
@@ -649,16 +643,13 @@ export default function Home() {
                     <Upload className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-stone-900">上传资料</p>
-                    <p className="mt-1 text-sm leading-6 text-stone-500">
-                      如果你上传的是图片，我们会尽量把图里的字读出来；如果是 PDF 或文本文件，也会尽量帮你读出内容。多份文件会自动合并到下面的文本框里，方便统一脱敏。
-                    </p>
+                    <p className="font-medium text-stone-900">上传文件</p>
                     <p className="mt-3 text-sm text-stone-700">
                       {selectedFiles.length === 0
-                        ? '点这里选择文件'
+                        ? '选择文件'
                         : selectedFiles.length === 1
-                          ? `当前文件：${selectedFiles[0].name}`
-                          : `当前已选择 ${selectedFiles.length} 个文件`}
+                          ? selectedFiles[0].name
+                          : `${selectedFiles.length} 个文件`}
                     </p>
                     {selectedFiles.length > 1 && (
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
@@ -713,9 +704,6 @@ export default function Home() {
                   <label htmlFor="medical-text" className="text-sm font-medium text-stone-700">
                     文字内容
                   </label>
-                  <span className="text-xs text-stone-400">
-                    如果有漏掉的个人信息，可以在这里手动选中处理
-                  </span>
                 </div>
                 <textarea
                   id="medical-text"
@@ -724,17 +712,14 @@ export default function Home() {
                   onChange={(event) => setText(event.target.value)}
                   onMouseUp={captureSelection}
                   onKeyUp={captureSelection}
-                  placeholder="你可以把病历、检查结果、聊天记录里的文字直接粘贴到这里。"
+                  placeholder="粘贴病历、检查结果或聊天记录"
                   className="min-h-[280px] w-full rounded-[24px] border border-stone-200 bg-stone-50/80 px-4 py-4 text-sm leading-7 text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-teal-700 focus:bg-white"
                 />
 
                 {manualRules.length > 0 && (
                   <div className="mt-4 rounded-[24px] border border-teal-200 bg-teal-50/50 p-4">
                   <div className="mb-2 text-sm font-medium text-teal-900">
-                    已经标记过的内容
-                  </div>
-                  <div className="mb-3 text-xs text-teal-700">
-                    如果标错了，点一下高亮的那一段就可以取消。
+                    手动标记
                   </div>
                   <div className="max-h-[220px] overflow-y-auto whitespace-pre-wrap text-sm leading-7 text-stone-700">
                     {highlightedTextPreview}
@@ -746,23 +731,20 @@ export default function Home() {
               <div className="mt-5 rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-stone-800">
                   <WandSparkles className="h-4 w-4 text-teal-700" />
-                  2. 如果有漏掉的，再手动补一下
+                  手动补充
                 </div>
-                <p className="mt-2 text-sm leading-6 text-stone-500">
-                  先在上面的文字里选中一小段，再点下面的按钮。这样可以把系统没认出来的信息补上。
-                </p>
 
                 <div className="mt-3 rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <label className="block text-xs font-medium tracking-[0.12em] text-stone-400">
-                        你要处理的这段内容
+                        选中文本
                       </label>
                       <input
                         type="text"
                         value={selection}
                         onChange={(event) => setSelection(event.target.value)}
-                        placeholder="先在上面的文字里选一段，或者直接在这里输入。"
+                        placeholder="选择或输入一段文字"
                         className="mt-2 w-full border-0 bg-transparent p-0 text-lg font-medium text-stone-900 outline-none placeholder:text-stone-400"
                       />
                     </div>
@@ -779,9 +761,6 @@ export default function Home() {
 
                   {selectionParts.length > 1 && (
                     <div className="mt-3">
-                      <div className="text-xs text-stone-400">
-                        这段里好像有几块内容。你可以点下面任意一块，分开处理。
-                      </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {selectionParts.map((part) => (
                           <button
@@ -880,22 +859,19 @@ export default function Home() {
             >
               <div className="flex items-center gap-2 text-lg font-semibold text-stone-900">
                 <Bot className="h-5 w-5 text-teal-700" />
-                3. 如果你愿意，再发给 AI
+                AI 助手
               </div>
-              <p className="mt-2 text-sm leading-6 text-stone-500">
-                处理完以后，你可以把这份更安全的内容发给 AI，请它帮你一起看看。
-              </p>
 
               {!aiChatEnabled && (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  现在这个演示页面还没有连上真实的 AI 回复服务，所以这里先不能直接发送。等接入正式服务后，这个按钮就可以用了。
+                  AI 服务未启用
                 </div>
               )}
 
               <textarea
                 value={assistantPrompt}
                 onChange={(event) => setAssistantPrompt(event.target.value)}
-                placeholder="比如：请帮我看看接下来最该问医生什么问题。"
+                placeholder="输入问题"
                 className="mt-4 min-h-[120px] w-full rounded-[24px] border border-stone-200 bg-stone-50/80 px-4 py-4 text-sm leading-7 text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-teal-700 focus:bg-white"
               />
 
@@ -909,12 +885,12 @@ export default function Home() {
                   {isChatLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      AI 正在阅读
+                      处理中
                     </>
                   ) : (
                     <>
                       <MessageSquareText className="h-4 w-4" />
-                      发给 AI 看看
+                      发送
                     </>
                   )}
                 </button>
@@ -943,7 +919,7 @@ export default function Home() {
                 <div className="mt-5 space-y-3">
                 {sessions.length === 0 ? (
                   <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 text-sm leading-6 text-stone-500">
-                    你还没有和 AI 聊过。处理好内容后，就可以从这里开始。
+                    暂无对话
                   </div>
                 ) : (
                   <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -987,7 +963,7 @@ export default function Home() {
                             {currentSession?.title || '当前对话'}
                           </div>
                           <div className="mt-1 text-xs text-stone-400">
-                            这里会保留你和 AI 说过的话，方便回头查看。
+                            {currentSession?.messages.length ?? 0} 条消息
                           </div>
                         </div>
                         <button
@@ -1019,7 +995,7 @@ export default function Home() {
                           ))
                         ) : (
                           <div className="rounded-[24px] border border-dashed border-stone-300 bg-white p-4 text-sm leading-6 text-stone-500">
-                            这一组对话里还没有内容。你可以先发一段处理后的资料，再继续问问题。
+                            暂无内容
                           </div>
                         )}
                       </div>
@@ -1039,9 +1015,6 @@ export default function Home() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-lg font-semibold">处理结果</p>
-                <p className="mt-1 text-sm text-stone-400">
-                  这里会显示处理前后的内容，方便你自己检查。
-                </p>
               </div>
 
               {result && (
@@ -1059,10 +1032,7 @@ export default function Home() {
                     <FileSearch className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-medium text-white">结果会显示在这里</p>
-                    <p className="mt-2 text-sm leading-7 text-stone-400">
-                      先上传一张病历图片、一个 PDF，或者直接粘贴文字。处理完成后，你会看到处理前和处理后的内容。
-                    </p>
+                    <p className="font-medium text-white">等待处理</p>
                   </div>
                 </div>
               </div>
@@ -1071,15 +1041,15 @@ export default function Home() {
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
                     {
-                      label: '遮掉了多少处',
+                      label: '脱敏项',
                       value: String(result.summary.total),
                     },
                     {
-                      label: '一共有多少字',
+                      label: '字数',
                       value: `${result.summary.characterCount} 字`,
                     },
                     {
-                      label: '这份内容来自',
+                      label: '来源',
                       value:
                         selectedFiles.length > 1
                           ? `${selectedFiles.length} 个文件`
@@ -1114,7 +1084,7 @@ export default function Home() {
                 <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-sm text-stone-300">
                     <ClipboardCheck className="h-4 w-4 text-teal-300" />
-                    这次处理了什么
+                    分类统计
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {stats.map((item) => (
@@ -1151,10 +1121,7 @@ export default function Home() {
                 <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium text-white">批量导出</div>
-                      <p className="mt-1 text-sm leading-6 text-stone-400">
-                        当前结果可以导出成 Markdown。批量上传时，会把每份文件和合并后的脱敏结果一起整理出来。
-                      </p>
+                      <div className="text-sm font-medium text-white">导出</div>
                     </div>
                     <button
                       type="button"
@@ -1169,11 +1136,8 @@ export default function Home() {
                 <div className="rounded-[24px] border border-teal-400/20 bg-teal-400/10 p-4">
                   <div className="flex items-center gap-2 text-sm text-teal-100">
                     <Sparkles className="h-4 w-4 text-teal-300" />
-                    你可以直接复制出去
+                    快速复制
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-stone-300">
-                    如果你准备把这份内容发给 AI、家人或医生，可以直接点下面的按钮，不用自己重新整理。
-                  </p>
                   <div className="mt-4 flex flex-wrap gap-3">
                     <button
                       type="button"
@@ -1183,12 +1147,12 @@ export default function Home() {
                       {copied === 'share_ai' ? (
                         <>
                           <BadgeCheck className="h-4 w-4" />
-                          已复制给 AI 用的内容
+                          已复制
                         </>
                       ) : (
                         <>
                           <MessageSquareText className="h-4 w-4" />
-                          复制给 AI
+                          复制 AI 文本
                         </>
                       )}
                     </button>
@@ -1200,12 +1164,12 @@ export default function Home() {
                       {copied === 'share_family' ? (
                         <>
                           <BadgeCheck className="h-4 w-4" />
-                          已复制给家人或医生
+                          已复制
                         </>
                       ) : (
                         <>
                           <Copy className="h-4 w-4" />
-                          复制给家人或医生
+                          复制分享文本
                         </>
                       )}
                     </button>
@@ -1215,7 +1179,7 @@ export default function Home() {
                 <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-sm text-stone-300">
                     <Sparkles className="h-4 w-4 text-teal-300" />
-                    每一处是怎么处理的
+                    明细
                   </div>
                   <div className="mt-3 space-y-3">
                     {result.items.map((item, index) => (
@@ -1238,10 +1202,10 @@ export default function Home() {
                             )}
                           >
                             {item.confidence === 'high'
-                              ? '系统比较确定'
+                              ? '高'
                               : item.confidence === 'manual'
-                                ? '你手动标记'
-                                : '系统猜测到'}
+                                ? '手动'
+                                : '中'}
                           </span>
                         </div>
                         <p className="mt-3 break-all font-mono text-sm text-stone-300">
@@ -1481,11 +1445,11 @@ function resolveSubmitErrorMessage(error: unknown, apiURL: string) {
       const pageProtocol = window.location.protocol;
       const targetProtocol = safeReadProtocol(apiURL);
       if (pageProtocol === 'https:' && targetProtocol === 'http:') {
-        return '当前页面是 HTTPS，但后端接口配置的是 HTTP，浏览器会拦截这个请求。请把前端改用 HTTP 打开，或者把后端也换成 HTTPS。';
+        return '服务连接失败';
       }
     }
 
-    return `现在连不上脱敏服务（${apiURL}）。请先确认后端已经启动，并且接口地址填写正确。`;
+    return '服务连接失败';
   }
 
   return message || '处理没有成功，请稍后再试。';
@@ -1542,7 +1506,7 @@ async function extractPdfText(file: File, onStatus: (message: string) => void): 
   }
 
   if (parts.length === 0) {
-    throw new Error('这个 PDF 暂时没有读出文字。你可以把它截图后当图片上传，或者把文字直接粘贴进来。');
+    throw new Error('未读取到 PDF 文字');
   }
 
   return parts.join('\n\n');
@@ -1599,23 +1563,23 @@ function AuthScreen({
           <div className="bg-stone-950 p-8 text-white sm:p-10">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm text-teal-100">
               <Shield className="h-4 w-4" />
-              登录后查看自己的历史记录
+              账号登录
             </div>
             <h1 className="mt-6 max-w-md text-3xl font-semibold tracking-tight sm:text-4xl">
               病历脱敏工作台
             </h1>
             <p className="mt-4 max-w-md text-sm leading-7 text-stone-300">
-              账号用于区分不同用户，并让你在不同浏览器登录后继续查看自己的 AI 对话历史。后台不保存上传文件原件，也不保存未脱敏病历原文。
+              登录后同步历史记录。请先脱敏，再发送给 AI。
             </p>
             <div className="mt-8 space-y-3 text-sm text-stone-300">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                账号密码只用于登录，密码以哈希形式保存。
+                密码加密保存。
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                历史记录保存的是你主动发给 AI 的对话内容；请先脱敏再发送。
+                历史记录按账号同步。
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                真实患者资料上线前仍需确认日志、访问权限和数据保留规则。
+                上传原件不保存。
               </div>
             </div>
           </div>
