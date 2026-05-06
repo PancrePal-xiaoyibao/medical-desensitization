@@ -11,7 +11,7 @@ jobs:
   auto-merge:
     name: 自动合并补丁更新
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    if: github.actor == 'dependabot[bot]' && vars.DEPENDABOT_AUTO_MERGE_ENABLED == 'true'
 
     steps:
       - name: 获取 Dependabot 元数据
