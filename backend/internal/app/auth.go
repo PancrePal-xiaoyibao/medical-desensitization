@@ -1,7 +1,6 @@
 package app
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -39,7 +40,6 @@ type storedUser struct {
 	ID           string `json:"id"`
 	Username     string `json:"username"`
 	DisplayName  string `json:"displayName"`
-	PasswordSalt string `json:"passwordSalt"`
 	PasswordHash string `json:"passwordHash"`
 	CreatedAt    int64  `json:"createdAt"`
 	LastLoginAt  int64  `json:"lastLoginAt"`
@@ -238,13 +238,15 @@ func (store *authStore) register(credentials authCredentials) (authResponse, err
 	}
 
 	now := time.Now().UnixMilli()
-	salt := randomToken(18)
+	passwordDigest, err := hashPassword(credentials.Password)
+	if err != nil {
+		return authResponse{}, err
+	}
 	user := storedUser{
 		ID:           randomToken(18),
 		Username:     username,
 		DisplayName:  displayName(credentials.DisplayName, username),
-		PasswordSalt: salt,
-		PasswordHash: passwordHash(credentials.Password, salt),
+		PasswordHash: passwordDigest,
 		CreatedAt:    now,
 		LastLoginAt:  now,
 	}
@@ -272,7 +274,7 @@ func (store *authStore) login(credentials authCredentials) (authResponse, error)
 		return authResponse{}, err
 	}
 	user, exists := state.Users[username]
-	if !exists || !hmac.Equal([]byte(user.PasswordHash), []byte(passwordHash(credentials.Password, user.PasswordSalt))) {
+	if !exists || !verifyPassword(user, credentials.Password) {
 		return authResponse{}, newAppError(http.StatusUnauthorized, "用户名或密码不正确")
 	}
 
@@ -439,14 +441,16 @@ func displayName(value string, username string) string {
 	return username
 }
 
-func passwordHash(password string, salt string) string {
-	sum := sha256.Sum256([]byte(salt + "\x00" + password))
-	digest := sum[:]
-	for range 120_000 {
-		next := sha256.Sum256(append([]byte(salt), digest...))
-		digest = next[:]
+func hashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", newAppError(http.StatusInternalServerError, "生成密码哈希失败", err.Error())
 	}
-	return hex.EncodeToString(digest)
+	return string(hash), nil
+}
+
+func verifyPassword(user storedUser, password string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) == nil
 }
 
 func tokenHash(token string) string {
