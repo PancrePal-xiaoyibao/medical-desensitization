@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -15,8 +16,8 @@ import (
 )
 
 const (
-	maxDesensitizeBodyBytes = 1 << 20
-	maxDesensitizeFileBytes = 2 << 20
+	defaultMaxDesensitizeBodyBytes int64 = 10 << 20
+	defaultMaxDesensitizeFileBytes int64 = 20 << 20
 )
 
 var (
@@ -93,7 +94,7 @@ func (s *Server) handleDesensitize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceType, fileName, text, manualRules, warnings, unsupported, err := parseDesensitizeInput(r)
+	sourceType, fileName, text, manualRules, warnings, unsupported, err := s.parseDesensitizeInput(r)
 	if err != nil {
 		writeError(r.Context(), w, err)
 		return
@@ -141,10 +142,10 @@ func (s *Server) handleDesensitize(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func parseDesensitizeInput(r *http.Request) (string, string, string, []manualRule, []string, bool, error) {
+func (s *Server) parseDesensitizeInput(r *http.Request) (string, string, string, []manualRule, []string, bool, error) {
 	contentType := strings.ToLower(r.Header.Get("Content-Type"))
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(maxDesensitizeFileBytes); err != nil {
+		if err := r.ParseMultipartForm(s.maxDesensitizeFileBytes()); err != nil {
 			return "", "", "", nil, nil, false, newAppError(http.StatusBadRequest, "上传文件解析失败")
 		}
 
@@ -177,8 +178,16 @@ func parseDesensitizeInput(r *http.Request) (string, string, string, []manualRul
 			return "file", fileName, "", manualRules, []string{"当前版本已接好上传入口，但图片和 PDF 还未接入 OCR，请先粘贴识别后的文本。"}, true, nil
 		}
 
-		raw, err := io.ReadAll(io.LimitReader(file, maxDesensitizeFileBytes))
+		maxFileBytes := s.maxDesensitizeFileBytes()
+		if fileHeader.Size > maxFileBytes {
+			return "", "", "", nil, nil, false, newAppError(http.StatusRequestEntityTooLarge, "上传文件过大")
+		}
+
+		raw, err := readLimited(file, maxFileBytes)
 		if err != nil {
+			if err == errContentTooLarge {
+				return "", "", "", nil, nil, false, newAppError(http.StatusRequestEntityTooLarge, "上传文件过大")
+			}
 			return "", "", "", nil, nil, false, newAppError(http.StatusBadRequest, "读取上传文件失败")
 		}
 
@@ -186,11 +195,52 @@ func parseDesensitizeInput(r *http.Request) (string, string, string, []manualRul
 	}
 
 	var request desensitizeRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxDesensitizeBodyBytes)).Decode(&request); err != nil {
+	rawBody, err := readLimited(r.Body, s.maxDesensitizeBodyBytes())
+	if err != nil {
+		if err == errContentTooLarge {
+			return "", "", "", nil, nil, false, newAppError(http.StatusRequestEntityTooLarge, "请求内容过大")
+		}
+		return "", "", "", nil, nil, false, newAppError(http.StatusBadRequest, "读取请求失败")
+	}
+	if err := json.Unmarshal(rawBody, &request); err != nil {
 		return "", "", "", nil, nil, false, newAppError(http.StatusBadRequest, "请求格式不正确")
 	}
 
 	return "text", "", request.Text, request.ManualRules, nil, false, nil
+}
+
+func (s *Server) maxDesensitizeBodyBytes() int64 {
+	if s.config.MaxDesensitizeBodyBytes > 0 {
+		return s.config.MaxDesensitizeBodyBytes
+	}
+
+	return defaultMaxDesensitizeBodyBytes
+}
+
+func (s *Server) maxDesensitizeFileBytes() int64 {
+	if s.config.MaxDesensitizeFileBytes > 0 {
+		return s.config.MaxDesensitizeFileBytes
+	}
+
+	return defaultMaxDesensitizeFileBytes
+}
+
+var errContentTooLarge = errors.New("content too large")
+
+func readLimited(reader io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxDesensitizeBodyBytes
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > maxBytes {
+		return nil, errContentTooLarge
+	}
+
+	return raw, nil
 }
 
 func isUnsupportedMedicalUpload(fileName string, mimeType string) bool {

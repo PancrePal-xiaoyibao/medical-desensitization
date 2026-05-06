@@ -142,3 +142,51 @@ func TestHandleDesensitize_ManualRules(t *testing.T) {
 		t.Fatalf("expected manual phone summary count: %#v", payload.Summary.ByType)
 	}
 }
+
+func TestHandleDesensitize_RejectsOversizedJSONPayload(t *testing.T) {
+	config := testConfig()
+	config.MaxDesensitizeBodyBytes = 24
+	backend := newBackendHTTPServer(t, config)
+	defer backend.Close()
+
+	requestBody := strings.NewReader(`{"text":"姓名：张三，手机号：13812345678"}`)
+	request, err := http.NewRequest(http.MethodPost, backend.URL+"/api/desensitize", requestBody)
+	if err != nil {
+		t.Fatalf("create request failed: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://frontend.test")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("perform request failed: %v", err)
+	}
+
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("unexpected status: %d", response.StatusCode)
+	}
+}
+
+func TestHandleDesensitize_RejectsOversizedMultipartFile(t *testing.T) {
+	config := testConfig()
+	config.MaxDesensitizeFileBytes = 8
+	backend := newBackendHTTPServer(t, config)
+	defer backend.Close()
+
+	request := createMultipartRequest(
+		t,
+		backend.URL+"/api/desensitize",
+		"report.txt",
+		"text/plain",
+		[]byte("患者姓名：李四"),
+	)
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("perform request failed: %v", err)
+	}
+
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("unexpected status: %d", response.StatusCode)
+	}
+}

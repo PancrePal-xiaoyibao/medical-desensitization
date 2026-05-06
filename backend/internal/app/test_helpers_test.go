@@ -19,6 +19,8 @@ func testConfig() Config {
 	return Config{
 		Port:                       "0",
 		CORSAllowedOrigins:         []string{"http://frontend.test"},
+		MaxDesensitizeBodyBytes:    defaultMaxDesensitizeBodyBytes,
+		MaxDesensitizeFileBytes:    defaultMaxDesensitizeFileBytes,
 		ChatProvider:               "openai",
 		ChatAPIKey:                 "chat-secret",
 		ChatRequestTimeout:         2 * time.Second,

@@ -90,6 +90,14 @@ http://localhost:3000
 - 前端通过 `NEXT_PUBLIC_API_BASE_URL` 和 `NEXT_PUBLIC_WS_BASE_URL` 访问后端
 - 流式语音识别走 Go 后端的 WebSocket，再由 Go 后端代理到上游服务
 
+## 隐私与数据处理
+
+- 原始病历文本、上传文件内容、OCR 结果和脱敏结果默认只在浏览器与 Go 后端内存中处理，不落库保存。
+- 只有在用户触发 AI 对话、语音识别或语音播报时，后端才会调用对应第三方服务。
+- 生产环境必须只把密钥放在后端环境变量或部署平台 Secret 中，不要提交 `.env`、录音、截图、导出的 Markdown 或真实病历样本。
+- 真实患者数据环境不建议开启 `LOG_LEVEL=debug`，除非日志访问和保留周期已经被明确管控。
+- 更多安全说明见 [`SECURITY.md`](./SECURITY.md)。
+
 ## 启动方式
 
 1. 安装前端依赖
@@ -121,6 +129,8 @@ Go backend 启动时会自动读取这个文件；如果你已经在 shell 里�
 BACKEND_PORT=8080
 CORS_ALLOWED_ORIGINS=http://localhost:3000,https://localhost:3000
 LOG_LEVEL=log
+MAX_DESENSITIZE_BODY_BYTES=10485760
+MAX_DESENSITIZE_FILE_BYTES=20971520
 CHAT_PROVIDER=fastgpt
 CHAT_API_URL=https://your-fastgpt-host/api/v1/chat/completions
 CHAT_API_KEY=fastgpt-app-key
@@ -162,6 +172,8 @@ npm run dev
 npm run certs
 npm run dev:https
 ```
+
+`npm run certs` 会生成本地开发证书到 `certificates/`。如果电脑已安装 `mkcert`，脚本会优先使用 `mkcert`；否则回退到 `openssl` 生成自签名证书。
 
 ## 构建
 
@@ -217,6 +229,22 @@ go run ./backend/cmd/server
 npm run lint
 npx tsc --noEmit
 ```
+
+后端：
+
+```bash
+npm run test:backend
+```
+
+## GitHub 仓库保护
+
+合并前建议先启用 `main` 分支 ruleset，避免直接 push 绕过 CI。具体步骤见 [`.github/BRANCH_PROTECTION.md`](./.github/BRANCH_PROTECTION.md)。
+
+Dependabot 补丁自动合并默认需要仓库变量 `DEPENDABOT_AUTO_MERGE_ENABLED=true` 才会运行。请先确认 `main` 分支保护和 required checks 已经生效，再打开这个变量。
+
+## 已知依赖告警
+
+截至 2026-05-06，`npm audit` 会报告当前最新 `next@16.2.4` 依赖链中的 PostCSS moderate 告警。不要运行 `npm audit fix --force`，因为 npm 当前给出的修复路径会破坏性降级 Next.js。保持 Dependabot 开启，等待 Next.js 发布非破坏性补丁后再升级。
 
 后端：
 

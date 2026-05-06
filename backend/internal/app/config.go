@@ -10,7 +10,9 @@ import (
 type Config struct {
 	Port string
 
-	CORSAllowedOrigins []string
+	CORSAllowedOrigins      []string
+	MaxDesensitizeBodyBytes int64
+	MaxDesensitizeFileBytes int64
 
 	LogLevel            string
 	ChatProvider        string
@@ -58,6 +60,8 @@ func LoadConfig() Config {
 	return Config{
 		Port:                       getenv("BACKEND_PORT", "8080"),
 		CORSAllowedOrigins:         parseOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		MaxDesensitizeBodyBytes:    int64(parsePositiveInt(os.Getenv("MAX_DESENSITIZE_BODY_BYTES"), 10<<20)),
+		MaxDesensitizeFileBytes:    int64(parsePositiveInt(os.Getenv("MAX_DESENSITIZE_FILE_BYTES"), 20<<20)),
 		LogLevel:                   normalizeLogLevel(os.Getenv("LOG_LEVEL")),
 		ChatProvider:               normalizeChatProvider(os.Getenv("CHAT_PROVIDER")),
 		ChatAPIURL:                 os.Getenv("CHAT_API_URL"),
